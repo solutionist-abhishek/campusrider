@@ -215,6 +215,9 @@
 .pickup-fee-field { min-width: 0; display: grid; gap: 5px; color: #566759; font-size: 9px; font-weight: 650; }
 .pickup-fee-field small { min-height: 18px; color: #899188; font-size: 8px; font-weight: 400; line-height: 1.4; }
 .pickup-fee-field input { width: 100%; min-height: 34px; padding: 0 9px; border: 1px solid #e1e8de; border-radius: 2px; color: #435747; background: #fcfdfa; font: inherit; font-size: 10px; }
+.pickup-settings-message, .pickup-settings-error { display: flex; align-items: flex-start; gap: 7px; margin-top: 12px; padding: 9px 10px; border: 1px solid #ead8b8; border-radius: 2px; color: #805d2c; background: #fffaf1; font-size: 9px; line-height: 1.5; }
+.pickup-settings-error { border-color: #e8c5bc; color: #873c2f; background: #fff4f0; }
+.pickup-settings-error svg { flex: 0 0 auto; margin-top: 1px; }
 .pickup-fee-field input:focus { border-color: #91ad8f; outline: 2px solid #dbe8d5; }
 .pickup-rider-settings-actions { display: flex; align-items: center; gap: 9px; margin-top: 14px; }
 .pickup-rider-settings-actions > span { margin-right: auto; color: #828b82; font-size: 9px; }

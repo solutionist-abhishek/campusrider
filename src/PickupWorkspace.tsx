@@ -202,6 +202,7 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
   const [loading, setLoading] = useState(true)
   const [settingsInitialized, setSettingsInitialized] = useState(false)
   const [error, setError] = useState('')
+  const [riderSettingsError, setRiderSettingsError] = useState('')
   const [notice, setNotice] = useState('')
   const [nextItemKey, setNextItemKey] = useState(2)
   const timelineEnd = useRef<HTMLDivElement>(null)
@@ -335,6 +336,20 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
     riderDiscoveryStatus,
     locations.find((location) => location.id === selectedLocation)?.name ?? 'this pickup point',
   )
+  const pickupSettingsComplete = settings.supported_locations.length > 0
+    && settings.supported_locations.every((id) => {
+      const pickup = pickupLocations.find((entry) => entry.id === id)
+      const fee = settings.pickup_delivery_fees[id]
+      return pickup !== undefined
+        && pickup.maximum_rider_delivery_fee !== null
+        && fee !== undefined
+        && fee >= Number(pickup.minimum_rider_delivery_fee)
+        && fee <= Number(pickup.maximum_rider_delivery_fee)
+    })
+  const pickupIsOnline = settings.is_online && pickupSettingsComplete
+  const missingFeeRangeLocations = draftLocations.filter((id) =>
+    pickupLocations.find((pickup) => pickup.id === id)?.maximum_rider_delivery_fee == null,
+  )
 
   async function chooseLocation(locationId: PickupLocationId) {
     const requestId = ++riderSearchId.current
@@ -444,6 +459,7 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
 
   async function saveRiderSettings(online: boolean) {
     if (!supabase || busy) return
+    setRiderSettingsError('')
     const deliveryFees = Object.fromEntries(locations.map(({ id }) => [
       id,
       draftFees[id].trim() ? Number(draftFees[id]) : null,
@@ -465,26 +481,31 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
       return []
     })
     if (feeErrors.length > 0) {
-      setError(feeErrors[0])
+      setRiderSettingsError(feeErrors[0])
       return
     }
     if (online && draftLocations.length === 0) {
-      setError('Choose at least one pickup point before going online.')
+      setRiderSettingsError('Choose at least one pickup point before going online.')
       return
     }
     if (online && draftLocations.some((id) => !draftFees[id].trim())) {
-      setError('Set a delivery fee for every pickup location you want to serve before going online.')
+      setRiderSettingsError('Set a delivery fee for every pickup location you want to serve before going online.')
       return
     }
     setBusy(true)
-    setError('')
+    setRiderSettingsError('')
     setNotice('')
     const { data, error: saveError } = await supabase.rpc('save_rider_pickup_settings', {
       pickup_locations: draftLocations,
       delivery_fees: deliveryFees,
       online,
     })
-    if (saveError) setError(saveError.message)
+    if (saveError) {
+      if (import.meta.env.DEV) {
+        console.error('Saving pickup rider settings failed:', { code: saveError.code, message: saveError.message })
+      }
+      setRiderSettingsError(saveError.message)
+    }
     else {
       const savedFees = Object.fromEntries(
         Object.entries(deliveryFees).filter((entry): entry is [string, number] => entry[1] !== null),
@@ -495,6 +516,7 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
         supported_locations: draftLocations,
         pickup_delivery_fees: savedFees,
       }))
+      setSettingsInitialized(true)
       setNotice(data ? 'You are online for the selected pickup locations.' : 'You are now offline for pickup requests.')
       await refreshHome()
     }
@@ -612,7 +634,11 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
           </div>
 
           <section className="pickup-rider-settings">
-            <div className="pickup-section-heading"><div><span className="section-eyebrow">RIDER WORKSPACE</span><h3>Offer pickup help</h3><p>Choose the pickup points you can deliver from, set a charge for each one, and go online when ready.</p></div><span className={`pickup-status ${settings.is_online ? 'online' : ''}`}><i />{settings.is_online ? 'ONLINE' : 'OFFLINE'}</span></div>
+            <div className="pickup-section-heading"><div><span className="section-eyebrow">RIDER WORKSPACE</span><h3>Offer pickup help</h3><p>Choose the pickup points you can deliver from, set a charge for each one, and go online when ready.</p></div><span className={`pickup-status ${pickupIsOnline ? 'online' : ''}`}><i />{pickupIsOnline ? 'ONLINE' : settings.is_online && !pickupSettingsComplete ? 'SETUP REQUIRED' : 'OFFLINE'}</span></div>
+            {missingFeeRangeLocations.length > 0 && <div className="pickup-settings-message" role="status">
+              An administrator must set an approved fee range for {missingFeeRangeLocations.map((id) => locations.find((location) => location.id === id)?.name ?? id).join(', ')} in Supabase before prices can be saved. Your account is not online for pickup requests until this setup is complete.
+            </div>}
+            {riderSettingsError && <div className="pickup-settings-error" role="alert"><CircleHelp size={15} />{riderSettingsError}</div>}
             <div className="pickup-fee-settings" aria-label="Rider delivery charges">
               {locations.map(({ id, name }) => {
                 const limits = pickupLocations.find((pickup) => pickup.id === id)
@@ -631,7 +657,7 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
                     onChange={(event) => setDraftFees((current) => ({ ...current, [id]: event.target.value }))}
                     placeholder={limits?.maximum_rider_delivery_fee == null ? 'Admin setup required' : 'Enter your fee'}
                     aria-label={`${name} delivery charge in Indian rupees`}
-                    disabled={busy}
+                    disabled={busy || limits?.maximum_rider_delivery_fee == null}
                   />
                 </label>
               })}
@@ -644,10 +670,10 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
             </div>
             <div className="pickup-rider-settings-actions">
               <span>{settings.workload} of {settings.capacity} active requests</span>
-              <button type="button" onClick={() => void saveRiderSettings(!settings.is_online)} disabled={busy}>
-                {busy ? 'Saving…' : settings.is_online ? 'Stop Accepting Requests' : 'Start Delivering'}
+              <button type="button" onClick={() => void saveRiderSettings(!pickupIsOnline)} disabled={busy}>
+                {busy ? 'Saving…' : pickupIsOnline ? 'Stop Accepting Requests' : 'Start Delivering'}
               </button>
-              <button className="pickup-secondary-button" type="button" onClick={() => void saveRiderSettings(settings.is_online)} disabled={busy}>Save rider settings</button>
+              <button className="pickup-secondary-button" type="button" onClick={() => void saveRiderSettings(pickupIsOnline)} disabled={busy}>Save rider settings</button>
             </div>
           </section>
 
