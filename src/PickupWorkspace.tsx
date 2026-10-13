@@ -45,7 +45,7 @@ type Rider = {
   avatar_url: string | null
   workload: number
   capacity: number
-  delivery_fee: number | null
+  delivery_fee: number
 }
 type ConversationSummary = {
   conversation_id: string
@@ -59,8 +59,19 @@ type ConversationSummary = {
   is_customer: boolean
   conversation_status: 'open' | 'closed'
 }
-type RiderSettings = { is_online: boolean; supported_locations: PickupLocationId[]; capacity: number; workload: number }
-type PickupLocation = { id: PickupLocationId; name: string; delivery_fee: number | null }
+type RiderSettings = {
+  is_online: boolean
+  supported_locations: PickupLocationId[]
+  capacity: number
+  workload: number
+  pickup_delivery_fees: Partial<Record<PickupLocationId, number>>
+}
+type PickupLocation = {
+  id: PickupLocationId
+  name: string
+  minimum_rider_delivery_fee: number
+  maximum_rider_delivery_fee: number | null
+}
 type PickupOrder = {
   id: string
   status: string
@@ -105,8 +116,19 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
   const [events, setEvents] = useState<ChatEvent[]>([])
   const [chatLoading, setChatLoading] = useState(false)
   const [orders, setOrders] = useState<PickupOrder[]>([])
-  const [settings, setSettings] = useState<RiderSettings>({ is_online: false, supported_locations: [], capacity: 3, workload: 0 })
+  const [settings, setSettings] = useState<RiderSettings>({
+    is_online: false,
+    supported_locations: [],
+    capacity: 3,
+    workload: 0,
+    pickup_delivery_fees: {},
+  })
   const [draftLocations, setDraftLocations] = useState<PickupLocationId[]>([])
+  const [draftFees, setDraftFees] = useState<Record<PickupLocationId, string>>({
+    canteen: '',
+    cafeteria: '',
+    gate: '',
+  })
   const [message, setMessage] = useState('')
   const [destination, setDestination] = useState('')
   const [draftItems, setDraftItems] = useState<DraftItem[]>([{ key: 1, name: '', quantity: '1', unitPrice: '' }])
@@ -126,8 +148,10 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
       return
     }
     if (showLoading) setLoading(true)
-    const [locationResult, conversationResult, orderResult, settingsResult] = await Promise.all([
-      supabase.from('pickup_locations').select('id,name,delivery_fee').eq('is_active', true),
+    const [locationResult, conversationResult, orderResult, settingsResult, feeResult] = await Promise.all([
+      supabase.from('pickup_locations')
+        .select('id,name,minimum_rider_delivery_fee,maximum_rider_delivery_fee')
+        .eq('is_active', true),
       supabase.rpc('get_my_pickup_conversations'),
       supabase.from('orders')
         .select('id,status,total_amount,delivery_fee,delivery_location,created_at,pickup_location_id,accepted_quote_id,delivery_partner_id,order_items(product_name,quantity,unit_price)')
@@ -136,8 +160,9 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
         .order('created_at', { ascending: false })
         .limit(30),
       supabase.rpc('get_my_rider_pickup_settings'),
+      supabase.rpc('get_my_rider_pickup_fees'),
     ])
-    const failure = locationResult.error ?? conversationResult.error ?? orderResult.error ?? settingsResult.error
+    const failure = locationResult.error ?? conversationResult.error ?? orderResult.error ?? settingsResult.error ?? feeResult.error
     if (failure) {
       setError(`Pickup services could not be loaded: ${failure.message}`)
     } else if (locations.some((location) => !(locationResult.data ?? []).some((row) => row.id === location.id && row.name === location.name))) {
@@ -149,9 +174,16 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
       setOrders(orderResult.data ?? [])
       const currentSettings = settingsResult.data?.[0]
       if (currentSettings) {
-        setSettings(currentSettings)
+        const storedFees = (feeResult.data ?? {}) as Partial<Record<PickupLocationId, number>>
+        const nextSupportedLocations = currentSettings.supported_locations ?? []
+        setSettings({ ...currentSettings, pickup_delivery_fees: storedFees })
+        setDraftLocations(nextSupportedLocations)
+        setDraftFees({
+          canteen: storedFees.canteen == null ? '' : String(storedFees.canteen),
+          cafeteria: storedFees.cafeteria == null ? '' : String(storedFees.cafeteria),
+          gate: storedFees.gate == null ? '' : String(storedFees.gate),
+        })
         if (!settingsInitialized) {
-          setDraftLocations(currentSettings.supported_locations ?? [])
           setSettingsInitialized(true)
         }
       }
@@ -223,6 +255,17 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
   }, [events])
 
   const currentConversation = conversations.find((conversation) => conversation.conversation_id === conversationId) ?? null
+  const currentPickup = currentConversation
+    ? pickupLocations.find((pickup) => pickup.id === currentConversation.pickup_location_id) ?? null
+    : null
+  const currentRiderFee = currentConversation && !currentConversation.is_customer
+    ? settings.pickup_delivery_fees[currentConversation.pickup_location_id] ?? null
+    : null
+  const currentRiderFeeIsValid = currentPickup !== null
+    && currentRiderFee !== null
+    && currentPickup.maximum_rider_delivery_fee !== null
+    && currentRiderFee >= Number(currentPickup.minimum_rider_delivery_fee)
+    && currentRiderFee <= Number(currentPickup.maximum_rider_delivery_fee)
 
   async function chooseLocation(locationId: PickupLocationId) {
     setSelectedLocation(locationId)
@@ -295,18 +338,55 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
     setBusy(false)
   }
 
-  async function saveRiderAvailability(online: boolean) {
+  async function saveRiderSettings(online: boolean) {
     if (!supabase || busy) return
+    const deliveryFees = Object.fromEntries(locations.map(({ id }) => [
+      id,
+      draftFees[id].trim() ? Number(draftFees[id]) : null,
+    ]))
+    const feeErrors = locations.flatMap(({ id }) => {
+      if (!draftFees[id].trim()) return []
+      const limits = pickupLocations.find((pickup) => pickup.id === id)
+      if (!limits || limits.maximum_rider_delivery_fee == null) {
+        return [`An administrator must configure the maximum delivery fee for ${limits?.name ?? id} before a rider price can be saved.`]
+      }
+      const amount = Number(draftFees[id])
+      if (!Number.isFinite(amount)
+        || amount < Number(limits.minimum_rider_delivery_fee)
+        || amount > Number(limits.maximum_rider_delivery_fee)
+        || Math.round(amount * 100) !== amount * 100
+      ) {
+        return [`Enter a ${limits.name} fee from ₹${Number(limits.minimum_rider_delivery_fee).toFixed(2)} to ₹${Number(limits.maximum_rider_delivery_fee).toFixed(2)}, with at most two decimal places.`]
+      }
+      return []
+    })
+    if (feeErrors.length > 0) {
+      setError(feeErrors[0])
+      return
+    }
+    if (online && draftLocations.some((id) => !draftFees[id].trim())) {
+      setError('Set a delivery fee for every pickup location you want to serve before going online.')
+      return
+    }
     setBusy(true)
     setError('')
     setNotice('')
-    const { data, error: saveError } = await supabase.rpc('set_rider_pickup_availability', {
+    const { data, error: saveError } = await supabase.rpc('save_rider_pickup_settings', {
       pickup_locations: draftLocations,
+      delivery_fees: deliveryFees,
       online,
     })
     if (saveError) setError(saveError.message)
     else {
-      setSettings((current) => ({ ...current, is_online: data, supported_locations: draftLocations }))
+      const savedFees = Object.fromEntries(
+        Object.entries(deliveryFees).filter((entry): entry is [string, number] => entry[1] !== null),
+      ) as Partial<Record<PickupLocationId, number>>
+      setSettings((current) => ({
+        ...current,
+        is_online: data,
+        supported_locations: draftLocations,
+        pickup_delivery_fees: savedFees,
+      }))
       setNotice(data ? 'You are online for the selected pickup locations.' : 'You are now offline for pickup requests.')
       await refreshHome()
     }
@@ -424,18 +504,42 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
           </div>
 
           <section className="pickup-rider-settings">
-            <div className="pickup-section-heading"><div><span className="section-eyebrow">RIDER WORKSPACE</span><h3>Offer pickup help</h3><p>Choose the pickup points you can serve, then set your availability.</p></div><span className={`pickup-status ${settings.is_online ? 'online' : ''}`}><i />{settings.is_online ? 'ONLINE' : 'OFFLINE'}</span></div>
-            <div className="pickup-location-options">
+            <div className="pickup-section-heading"><div><span className="section-eyebrow">RIDER WORKSPACE</span><h3>Offer pickup help</h3><p>Choose the pickup points you can deliver from, set a charge for each one, and go online when ready.</p></div><span className={`pickup-status ${settings.is_online ? 'online' : ''}`}><i />{settings.is_online ? 'ONLINE' : 'OFFLINE'}</span></div>
+            <div className="pickup-fee-settings" aria-label="Rider delivery charges">
+              {locations.map(({ id, name }) => {
+                const limits = pickupLocations.find((pickup) => pickup.id === id)
+                return <label className="pickup-fee-field" key={id}>
+                  <span>{name} delivery charge (INR)</span>
+                  {limits?.maximum_rider_delivery_fee == null
+                    ? <small>An administrator must configure the allowed fee range.</small>
+                    : <small>Allowed: ₹{Number(limits.minimum_rider_delivery_fee).toFixed(2)}–₹{Number(limits.maximum_rider_delivery_fee).toFixed(2)}</small>}
+                  <input
+                    type="number"
+                    min={limits?.minimum_rider_delivery_fee ?? 0}
+                    max={limits?.maximum_rider_delivery_fee ?? undefined}
+                    step="0.01"
+                    inputMode="decimal"
+                    value={draftFees[id]}
+                    onChange={(event) => setDraftFees((current) => ({ ...current, [id]: event.target.value }))}
+                    placeholder={limits?.maximum_rider_delivery_fee == null ? 'Admin setup required' : 'Enter your fee'}
+                    aria-label={`${name} delivery charge in Indian rupees`}
+                    disabled={busy}
+                  />
+                </label>
+              })}
+            </div>
+            <div className="pickup-location-options" aria-label="Pickup points available for delivery">
+              <span className="pickup-source-label">I can deliver from</span>
               {locations.map(({ id, name }) => (
-                <label key={id}><input type="checkbox" checked={draftLocations.includes(id)} onChange={() => toggleDraftLocation(id)} disabled={busy} />{name}</label>
+                <label key={id}><input type="checkbox" checked={draftLocations.includes(id)} onChange={() => toggleDraftLocation(id)} disabled={busy} />Deliver from {name}</label>
               ))}
             </div>
             <div className="pickup-rider-settings-actions">
               <span>{settings.workload} of {settings.capacity} active requests</span>
-              <button type="button" onClick={() => void saveRiderAvailability(!settings.is_online)} disabled={busy || (settings.is_online && draftLocations.length === 0)}>
-                {busy ? 'Saving…' : settings.is_online ? 'Go offline' : 'Save & go online'}
+              <button type="button" onClick={() => void saveRiderSettings(!settings.is_online)} disabled={busy}>
+                {busy ? 'Saving…' : settings.is_online ? 'Stop Accepting Requests' : 'Start Delivering'}
               </button>
-              <button className="pickup-secondary-button" type="button" onClick={() => void saveRiderAvailability(settings.is_online)} disabled={busy}>Save locations</button>
+              <button className="pickup-secondary-button" type="button" onClick={() => void saveRiderSettings(settings.is_online)} disabled={busy}>Save rider settings</button>
             </div>
           </section>
 
@@ -486,8 +590,7 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
                 <article className="pickup-rider-card" key={rider.rider_id}>
                   <div className="pickup-rider-profile">{rider.avatar_url ? <img src={rider.avatar_url} alt="" /> : <span>{rider.full_name.charAt(0).toUpperCase()}</span>}<div><strong>{rider.full_name}</strong><small><i /> Online · available</small></div></div>
                   <div className="pickup-rider-verified"><ShieldCheck size={14} /> Verified NIT Srinagar student</div>
-                  <div className="pickup-rider-facts"><span>Active workload</span><strong>{rider.workload} / {rider.capacity}</strong><span>Fixed delivery charge</span><strong>{rider.delivery_fee === null ? 'Not configured' : `₹${Number(rider.delivery_fee).toFixed(2)}`}</strong></div>
-                  {rider.delivery_fee === null && <p className="pickup-fee-note">Quotes are unavailable until the pickup fee is configured.</p>}
+                  <div className="pickup-rider-facts"><span>Active workload</span><strong>{rider.workload} / {rider.capacity}</strong><span>Rider delivery charge</span><strong>₹{Number(rider.delivery_fee).toFixed(2)}</strong></div>
                   <button className="pickup-chat-button" type="button" onClick={() => void openConversation(rider.rider_id, selectedLocation)} disabled={busy}>
                     {busy ? 'Opening chat…' : 'Chat with Rider'} <MessageCircle size={15} />
                   </button>
@@ -506,17 +609,17 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
               : <article key={event.id} className={`pickup-quote-card ${event.quote.status}`}>
                 <div className="pickup-quote-heading"><strong>Itemized quote</strong><span>{event.quote.status}</span></div>
                 <div className="pickup-quote-items">{event.quote.quote_items.map((item) => <div key={item.id}><span>{item.quantity} × {item.item_name}</span><strong>₹{Number(item.line_total).toFixed(2)}</strong><small>₹{Number(item.unit_price).toFixed(2)} each</small></div>)}</div>
-                <div className="pickup-quote-total"><span>Items subtotal</span><strong>₹{Number(event.quote.item_subtotal).toFixed(2)}</strong><span>Fixed delivery charge</span><strong>₹{Number(event.quote.delivery_fee).toFixed(2)}</strong>{event.quote.delivery_destination && <><span>Destination</span><strong>{event.quote.delivery_destination}</strong></>}{event.quote.estimated_minutes && <><span>Estimated time</span><strong><Clock3 size={13} /> About {event.quote.estimated_minutes} min</strong></>}<b>Total amount</b><b>₹{Number(event.quote.total_amount).toFixed(2)}</b></div>
+                <div className="pickup-quote-total"><span>Items subtotal</span><strong>₹{Number(event.quote.item_subtotal).toFixed(2)}</strong><span>Rider delivery charge</span><strong>₹{Number(event.quote.delivery_fee).toFixed(2)}</strong>{event.quote.delivery_destination && <><span>Destination</span><strong>{event.quote.delivery_destination}</strong></>}{event.quote.estimated_minutes && <><span>Estimated time</span><strong><Clock3 size={13} /> About {event.quote.estimated_minutes} min</strong></>}<b>Total amount</b><b>₹{Number(event.quote.total_amount).toFixed(2)}</b></div>
                 {currentConversation?.is_customer && event.quote.status === 'proposed' && <div className="pickup-quote-actions"><label>Delivery destination<input value={destination || event.quote.delivery_destination || currentConversation.destination || ''} onChange={(inputEvent) => setDestination(inputEvent.target.value)} placeholder="Hostel and room" maxLength={240} /></label><button type="button" onClick={() => void respondToQuote(event.quote.id, false)} disabled={busy}>Reject</button><button type="button" onClick={() => void respondToQuote(event.quote.id, true)} disabled={busy}>Accept quote</button></div>}
                 <p className="pickup-payment-note">Campus Rider records the agreed amount but does not collect or process payment.</p>
               </article>)}
             <div ref={timelineEnd} />
           </div>
-          {currentConversation?.is_customer === false && currentConversation.conversation_status === 'open' && (currentConversation.request_status === 'pending' || currentConversation.request_status === 'rejected') && pickupLocations.find((location) => location.id === currentConversation.pickup_location_id)?.delivery_fee == null
-            ? <div className="pickup-fee-note pickup-unconfigured-fee">A quote cannot be sent until an administrator configures the fixed fee for this pickup location.</div>
+          {currentConversation?.is_customer === false && currentConversation.conversation_status === 'open' && (currentConversation.request_status === 'pending' || currentConversation.request_status === 'rejected') && !currentRiderFeeIsValid
+            ? <div className="pickup-fee-note pickup-unconfigured-fee">A quote cannot be sent until your delivery charge is configured within the administrator-approved range for this pickup location.</div>
             : currentConversation?.is_customer === false && currentConversation.conversation_status === 'open' && (currentConversation.request_status === 'pending' || currentConversation.request_status === 'rejected') && (
             <form className="pickup-quote-form" onSubmit={(event) => void createQuote(event)}>
-              <div className="pickup-quote-form-heading"><div><span className="section-eyebrow">RIDER RESPONSE</span><strong>Create itemized quote</strong></div><span>Fixed fee: ₹{Number(pickupLocations.find((location) => location.id === currentConversation.pickup_location_id)?.delivery_fee).toFixed(2)}</span></div>
+              <div className="pickup-quote-form-heading"><div><span className="section-eyebrow">RIDER RESPONSE</span><strong>Create itemized quote</strong></div><span>Rider delivery charge: ₹{Number(currentRiderFee).toFixed(2)}</span></div>
               {draftItems.map((item) => <div className="pickup-quote-draft-row" key={item.key}><input aria-label="Item name" value={item.name} onChange={(event) => updateQuoteItem(item.key, 'name', event.target.value)} placeholder="Item name" maxLength={120} required /><input aria-label="Quantity" type="number" min="1" max="99" value={item.quantity} onChange={(event) => updateQuoteItem(item.key, 'quantity', event.target.value)} required /><input aria-label="Unit price" type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateQuoteItem(item.key, 'unitPrice', event.target.value)} placeholder="₹ price" required />{draftItems.length > 1 && <button className="pickup-remove-item" type="button" onClick={() => setDraftItems((current) => current.filter((existing) => existing.key !== item.key))} aria-label="Remove item"><Trash2 size={14} /></button>}</div>)}
               <div className="pickup-quote-draft-footer"><button className="pickup-add-item" type="button" onClick={addQuoteItem}><Plus size={14} /> Add item</button><label>Destination (if known)<input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder={currentConversation.destination ?? 'Hostel and room'} maxLength={240} /></label><label>ETA (minutes)<input type="number" min="1" max="240" value={eta} onChange={(event) => setEta(event.target.value)} placeholder="Optional" /></label></div>
               <button className="pickup-send-quote" type="submit" disabled={busy}>{busy ? 'Sending quote…' : 'Send quote'} <ArrowRight size={15} /></button>

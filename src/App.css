@@ -207,9 +207,15 @@
 .pickup-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; color: #7c877d; font-size: 8px; font-weight: 750; letter-spacing: .8px; }
 .pickup-status i, .pickup-rider-profile small i { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: #aab1aa; }
 .pickup-status.online { color: #4a7c53; }.pickup-status.online i, .pickup-rider-profile small i { background: #67a46b; }
-.pickup-location-options { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+.pickup-location-options { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 14px; }
+.pickup-source-label { width: 100%; margin-bottom: 2px; color: #657466; font-size: 8px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
 .pickup-location-options label { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid #e4e9e1; border-radius: 2px; color: #566759; background: #fcfdfa; font-size: 9px; cursor: pointer; }
 .pickup-location-options input { accent-color: #4b7b55; }
+.pickup-fee-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.pickup-fee-field { min-width: 0; display: grid; gap: 5px; color: #566759; font-size: 9px; font-weight: 650; }
+.pickup-fee-field small { min-height: 18px; color: #899188; font-size: 8px; font-weight: 400; line-height: 1.4; }
+.pickup-fee-field input { width: 100%; min-height: 34px; padding: 0 9px; border: 1px solid #e1e8de; border-radius: 2px; color: #435747; background: #fcfdfa; font: inherit; font-size: 10px; }
+.pickup-fee-field input:focus { border-color: #91ad8f; outline: 2px solid #dbe8d5; }
 .pickup-rider-settings-actions { display: flex; align-items: center; gap: 9px; margin-top: 14px; }
 .pickup-rider-settings-actions > span { margin-right: auto; color: #828b82; font-size: 9px; }
 .pickup-rider-settings-actions button, .pickup-send-quote { min-height: 34px; padding: 0 11px; border: 1px solid #d9e4d5; border-radius: 2px; color: #fff; background: var(--forest); font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; }
@@ -338,6 +344,8 @@
   .pickup-location-card p { min-height: 0; grid-column: 2; }
   .pickup-location-card button { grid-column: 1/-1; margin-top: 10px; }
   .pickup-rider-settings, .pickup-list-section { margin-top: 15px; padding: 12px; }
+  .pickup-fee-settings { grid-template-columns: 1fr; gap: 8px; }
+  .pickup-fee-field small { min-height: 0; }
   .pickup-section-heading h3 { font-size: 18px; }
   .pickup-rider-settings-actions { flex-wrap: wrap; }
   .pickup-rider-settings-actions > span { width: 100%; }
