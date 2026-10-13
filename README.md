@@ -23,6 +23,7 @@ In the Supabase dashboard, open **SQL Editor → New query** and run all migrati
 4. `supabase/migrations/20261013010000_pickup_chat_quotes.sql`
 5. `supabase/migrations/20261014000000_rider_pickup_pricing.sql`
 6. `supabase/migrations/20261014010000_pickup_rider_discovery_diagnostics.sql`
+7. `supabase/migrations/20261014020000_fix_pickup_settings_jsonb_validation.sql`
 
 Then start the app:
 ```sh
@@ -37,7 +38,7 @@ The frontend can be deployed on Vercel's free plan and use a Supabase project on
 1. Push this project to a GitHub repository and import it into [Vercel](https://vercel.com/new). Keep the Vite defaults (`npm run build` and `dist`) or set those values in Project Settings → Build and Deployment.
 2. In Vercel → Project Settings → Environment Variables, add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` using the values from Supabase → Project Settings → API. These are public client settings; never add a Supabase `service_role` key. Set them for Production and Preview as needed, and set `VITE_DEV_BYPASS_AUTH` to `false`.
 3. Deploy the project. In Supabase → Authentication → URL Configuration, set **Site URL** to the deployed Vercel origin (for example, `https://your-project.vercel.app`) and add that origin to **Redirect URLs**. Keep `http://localhost:5173` there for local development. Add any Vercel preview origins you plan to use.
-4. In Supabase → SQL Editor, run all six migration files in the order listed above, then confirm email/password sign-in and email confirmation are enabled under Authentication → Providers → Email.
+4. In Supabase → SQL Editor, run all seven migration files in the order listed above, then confirm email/password sign-in and email confirmation are enabled under Authentication → Providers → Email.
 5. Redeploy after changing Vercel environment variables. Test signup with an `@nitsri.ac.in` address, open the confirmation link, then log in. Test password recovery from the deployed origin as well.
 
 `vercel.json` routes browser paths back to the Vite app so auth links and client-side screens load on refresh. Supabase's built-in email sender has restrictive limits; configure a supported SMTP provider in Supabase for dependable verification and recovery emails.
@@ -49,7 +50,7 @@ The frontend can be deployed on Vercel's free plan and use a Supabase project on
 4. Set the minimum password length to 12 or greater. The client also requires uppercase, lowercase, number, and symbol; provider-side password policy remains authoritative.
 5. Configure custom SMTP for dependable verification and recovery mail in production. Supabase's built-in email sender has restrictive delivery/rate limits and is for evaluation, not production traffic.
 6. Copy the project URL and anon/publishable key from **Project Settings → API** into `.env.local`. Restart Vite after changing environment variables.
-7. Apply all six files in `supabase/migrations/` in timestamp order in the Supabase SQL editor. The third migration adds Gasha Canteen and Cafeteria as active canteens if they do not already exist. The fourth adds pickup chat and quoting. The fifth adds rider-set pickup charges and administrator-approved fee limits. The sixth adds privacy-preserving diagnostics for why no riders are available.
+7. Apply all seven files in `supabase/migrations/` in timestamp order in the Supabase SQL editor. The third migration adds Gasha Canteen and Cafeteria as active canteens if they do not already exist. The fourth adds pickup chat and quoting. The fifth adds rider-set pickup charges and administrator-approved fee limits. The sixth adds privacy-preserving diagnostics for why no riders are available. The seventh fixes JSONB validation in rider pickup settings.
 
 The frontend validates and lowercases/trims addresses for quick feedback. Independently, a `BEFORE INSERT OR UPDATE` trigger on `auth.users` lowercases and rejects any address outside `@nitsri.ac.in`, including direct Auth API requests. The database's `is_verified_nitsri_user()` helper and RLS policies additionally require `email_confirmed_at` before exposing profile/catalog/order data. Verification links are sent by Supabase Auth; an unverified signup does not get dashboard access. Passwords are stored and checked only by Supabase Auth, which uses its managed password hashing. Password reset links return to the app and open the change-password view.
 ## Data model
