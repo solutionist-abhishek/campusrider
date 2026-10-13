@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState, type FormEvent } from 'react'
+import { lazy, Suspense, useEffect, useEffectEvent, useState, type FormEvent } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -27,9 +27,11 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import './App.css'
 
+const PickupWorkspace = lazy(() => import('./PickupWorkspace'))
+
 type Screen = 'welcome' | 'auth' | 'reset' | 'dashboard'
 type AuthTab = 'login' | 'signup'
-type WorkspaceTab = 'order' | 'deliver'
+type WorkspaceTab = 'pickup' | 'order' | 'deliver'
 type MenuCategory = 'All' | 'Food' | 'Drinks' | 'Other'
 
 type Canteen = {
@@ -216,7 +218,7 @@ function App() {
   const [screen, setScreen] = useState<Screen>(() => devBypassActive ? 'dashboard' : 'welcome')
   const [session, setSession] = useState<Session | null>(() => devBypassActive ? createPreviewSession() : null)
   const [authReady, setAuthReady] = useState(!supabase || devBypassActive)
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('order')
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('pickup')
 
   useEffect(() => {
     if (devBypassActive) return
@@ -270,14 +272,14 @@ function App() {
 
   async function logOut() {
     if (devBypassActive) {
-      setWorkspaceTab('order')
+      setWorkspaceTab('pickup')
       setSession(null)
       setScreen('welcome')
       return
     }
     if (!supabase) return
     await supabase.auth.signOut()
-    setWorkspaceTab('order')
+    setWorkspaceTab('pickup')
     setScreen('welcome')
   }
 
@@ -635,13 +637,14 @@ function Dashboard({ session, previewMode, workspaceTab, onWorkspaceChange, onLo
 
   return (
     <main className="dashboard-shell">
-      <header className="dashboard-topbar"><a className="dashboard-brand" href="#order" onClick={(event) => { event.preventDefault(); onWorkspaceChange('order') }}><Brand /></a><div className="dashboard-campus"><MapPin size={14} /> NIT Srinagar</div><div className="dashboard-user-wrap"><button className="dashboard-user" type="button" aria-expanded={profileOpen} onClick={() => setProfileOpen(!profileOpen)}><span className="user-avatar">{name.charAt(0).toUpperCase()}</span><span>{name}</span><ChevronDown size={14} /></button>{profileOpen && <div className="profile-menu"><strong>{name}</strong><span>{session.user.email}</span><button type="button" onClick={() => { setAccountSettingsOpen(true); setProfileOpen(false) }}><UserRound size={15} /> Account settings</button><button type="button" onClick={onLogout}><LogOut size={15} /> Log out</button></div>}</div></header>
+      <header className="dashboard-topbar"><a className="dashboard-brand" href="#pickup" onClick={(event) => { event.preventDefault(); onWorkspaceChange('pickup') }}><Brand /></a><div className="dashboard-campus"><MapPin size={14} /> NIT Srinagar</div><div className="dashboard-user-wrap"><button className="dashboard-user" type="button" aria-expanded={profileOpen} onClick={() => setProfileOpen(!profileOpen)}><span className="user-avatar">{name.charAt(0).toUpperCase()}</span><span>{name}</span><ChevronDown size={14} /></button>{profileOpen && <div className="profile-menu"><strong>{name}</strong><span>{session.user.email}</span><button type="button" onClick={() => { setAccountSettingsOpen(true); setProfileOpen(false) }}><UserRound size={15} /> Account settings</button><button type="button" onClick={onLogout}><LogOut size={15} /> Log out</button></div>}</div></header>
       {accountSettingsOpen && <div className="account-modal-backdrop" onClick={() => setAccountSettingsOpen(false)}><section className="account-modal" role="dialog" aria-modal="true" aria-labelledby="account-settings-title" onClick={(event) => event.stopPropagation()}><div className="account-modal-heading"><div><span className="section-eyebrow">CAMPUS RIDER ACCOUNT</span><h2 id="account-settings-title">Account settings</h2></div><button className="icon-action" type="button" aria-label="Close account settings" onClick={() => setAccountSettingsOpen(false)}><X size={16} /></button></div><div className="account-detail"><span className="account-detail-icon"><UserRound size={17} /></span><span><small>FULL NAME</small><strong>{name}</strong></span></div><div className="account-detail"><span className="account-detail-icon"><Mail size={17} /></span><span><small>COLLEGE EMAIL</small><strong>{session.user.email}</strong></span></div><div className="account-verified"><ShieldCheck size={16} /> Verified NIT Srinagar student</div><button className="account-logout" type="button" onClick={onLogout}><LogOut size={16} /> Log out of Campus Rider</button></section></div>}
-      <div className="dashboard-welcome"><span className="section-eyebrow">YOUR CAMPUS IS READY</span><h1>Hey, {name.split(' ')[0]}<span>.</span></h1><p>One account. Two ways to move campus life forward.</p></div>
+      <div className="dashboard-welcome"><span className="section-eyebrow">YOUR CAMPUS IS READY</span><h1>Hey, {name.split(' ')[0]}<span>.</span></h1><p>Find a rider for your pickup or help a fellow student.</p></div>
       {previewMode && <div className="dashboard-alert success" role="status"><Check size={16} />Demo preview mode is active — local sample data only, no Supabase auth or database writes.</div>}
-      <div className="workspace-switch" role="tablist" aria-label="Choose Campus Rider workspace"><button type="button" role="tab" aria-selected={workspaceTab === 'order'} className={workspaceTab === 'order' ? 'active' : ''} onClick={() => onWorkspaceChange('order')}><ShoppingBag size={16} /> ORDER</button><button type="button" role="tab" aria-selected={workspaceTab === 'deliver'} className={workspaceTab === 'deliver' ? 'active' : ''} onClick={() => onWorkspaceChange('deliver')}><Bike size={17} /> DELIVER</button></div>
+      <div className="workspace-switch" role="tablist" aria-label="Choose Campus Rider workspace"><button type="button" role="tab" aria-selected={workspaceTab === 'pickup'} className={workspaceTab === 'pickup' ? 'active' : ''} onClick={() => onWorkspaceChange('pickup')}><MapPinned size={16} /> PICKUPS</button><button type="button" role="tab" aria-selected={workspaceTab === 'order'} className={workspaceTab === 'order' ? 'active' : ''} onClick={() => onWorkspaceChange('order')}><ShoppingBag size={16} /> ORDER</button><button type="button" role="tab" aria-selected={workspaceTab === 'deliver'} className={workspaceTab === 'deliver' ? 'active' : ''} onClick={() => onWorkspaceChange('deliver')}><Bike size={17} /> DELIVER</button></div>
       {error && <div className="dashboard-alert error" role="alert"><CircleHelp size={16} />{error}<button type="button" onClick={() => void refreshDashboard()}>Retry</button></div>}
       {notice && <div className="dashboard-alert success" role="status"><Check size={16} />{notice}<button type="button" aria-label="Dismiss message" onClick={() => setNotice('')}>×</button></div>}
+      {workspaceTab === 'pickup' ? <Suspense fallback={<div className="pickup-loading"><LoaderCircle size={18} /> Loading pickup workspace…</div>}><PickupWorkspace session={session} previewMode={previewMode} /></Suspense> : (
       <section className={`workspace-grid ${workspaceTab === 'deliver' ? 'show-deliver' : 'show-order'}`}>
         <OrderWorkspace
           canteens={canteens} products={filteredProducts} allProducts={products} orders={orders} cart={cart} cartTotal={cartTotal} itemCount={itemCount}
@@ -665,9 +668,9 @@ function Dashboard({ session, previewMode, workspaceTab, onWorkspaceChange, onLo
           onAccept={(id) => void runAction(() => supabase ? supabase.rpc('accept_delivery', { delivery_uuid: id }) : Promise.resolve({ error: null }), 'Delivery accepted. It is now assigned to you.')}
           onStatusChange={(id, status) => void runAction(() => supabase ? supabase.rpc('update_delivery_status', { delivery_uuid: id, next_status: status }) : Promise.resolve({ error: null }), status === 'delivered' ? 'Delivery completed. Earnings are recorded only when compensation is configured.' : 'Pickup confirmed. The customer can see the updated status.')}
         />
-      </section>
+      </section>)}
       <footer className="dashboard-footer"><span>Campus Rider · NIT Srinagar</span><span>One account, student powered.</span></footer>
-      <nav className="mobile-nav" aria-label="Campus Rider workspaces"><button type="button" className={workspaceTab === 'order' ? 'active' : ''} onClick={() => onWorkspaceChange('order')}><ShoppingBag size={18} /><span>ORDER</span></button><button type="button" className={workspaceTab === 'deliver' ? 'active' : ''} onClick={() => onWorkspaceChange('deliver')}><Bike size={19} /><span>DELIVER</span></button><button type="button" onClick={() => setProfileOpen(!profileOpen)}><UserRound size={18} /><span>PROFILE</span></button><button type="button" onClick={onLogout}><LogOut size={18} /><span>LOGOUT</span></button></nav>
+      <nav className="mobile-nav" aria-label="Campus Rider workspaces"><button type="button" className={workspaceTab === 'pickup' ? 'active' : ''} onClick={() => onWorkspaceChange('pickup')}><MapPinned size={18} /><span>PICKUPS</span></button><button type="button" className={workspaceTab === 'order' ? 'active' : ''} onClick={() => onWorkspaceChange('order')}><ShoppingBag size={18} /><span>ORDER</span></button><button type="button" className={workspaceTab === 'deliver' ? 'active' : ''} onClick={() => onWorkspaceChange('deliver')}><Bike size={19} /><span>DELIVER</span></button><button type="button" onClick={onLogout}><LogOut size={18} /><span>LOGOUT</span></button></nav>
     </main>
   )
 }

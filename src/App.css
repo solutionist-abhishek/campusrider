@@ -144,7 +144,9 @@
 .profile-menu > strong { color: #344a39; font-size: 11px; }.profile-menu > span { overflow: hidden; margin: -1px 0 7px; color: #879087; font-size: 9px; text-overflow: ellipsis; }
 .profile-menu button { min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 7px; border: 0; border-radius: 2px; color: #667369; background: transparent; font: inherit; font-size: 10px; text-align: left; cursor: pointer; }.profile-menu button:hover { color: var(--forest); background: #f1f5ec; }
 .dashboard-welcome { width: min(100% - 64px, 1320px); margin: 33px auto 22px; }.dashboard-welcome .section-eyebrow { color: #728376; }.dashboard-welcome h1 { margin: 8px 0 4px; color: var(--forest); font-family: var(--display); font-size: 31px; font-weight: 500; line-height: 1.1; }.dashboard-welcome h1 span { color: var(--leaf); }.dashboard-welcome p { color: #808981; font-size: 10px; }
-.workspace-switch { display: none; }
+.workspace-switch { width: min(100% - 64px, 1320px); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; margin: 0 auto 16px; padding: 3px; border: 1px solid #e0e7dd; border-radius: 3px; background: #edf2e9; }
+.workspace-switch button { min-height: 37px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 2px; color: #7e8a7e; background: transparent; font: inherit; font-size: 9px; font-weight: 750; letter-spacing: .6px; cursor: pointer; }
+.workspace-switch button.active { color: #325b3d; background: #fff; box-shadow: 0 1px 4px #203d2414; }
 .dashboard-alert { width: min(100% - 64px, 1320px); min-height: 39px; margin: 0 auto 12px; display: flex; align-items: center; gap: 9px; padding: 8px 11px; border: 1px solid; border-radius: 3px; font-size: 10px; line-height: 1.4; }.dashboard-alert > svg { flex: 0 0 auto; }.dashboard-alert button { margin-left: auto; padding: 4px 7px; border: 0; color: inherit; background: transparent; font: inherit; font-weight: 700; cursor: pointer; }.dashboard-alert.error { border-color: #e8c5bc; color: #873c2f; background: #fff4f0; }.dashboard-alert.success { border-color: #c8ddc8; color: #365f40; background: #f2f8ef; }
 .workspace-grid { width: min(100% - 64px, 1320px); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 18px; }
 .workspace-grid.show-order .deliver-panel,
@@ -180,5 +182,176 @@
 }
 
 @media (max-width: 650px) {
-  .dashboard-topbar { padding: 0 17px; }.dashboard-welcome { width: auto; margin: 21px 19px 14px; }.dashboard-welcome h1 { font-size: 27px; }.dashboard-welcome p { font-size: 9px; }.workspace-switch { width: calc(100% - 38px); display: grid; grid-template-columns: 1fr 1fr; margin: 0 auto 13px; padding: 3px; border: 1px solid #e0e7dd; border-radius: 3px; background: #edf2e9; }.workspace-switch button { min-height: 35px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 2px; color: #7e8a7e; background: transparent; font: inherit; font-size: 9px; font-weight: 750; letter-spacing: .6px; cursor: pointer; }.workspace-switch button.active { color: #325b3d; background: #fff; box-shadow: 0 1px 4px #203d2414; }.dashboard-alert { width: calc(100% - 38px); margin-bottom: 9px; font-size: 9px; }.workspace-grid { width: auto; display: block; margin: 0 19px; }.workspace-grid .workspace-panel { display: none; }.workspace-grid:not(.show-deliver) .order-panel, .workspace-grid.show-deliver .deliver-panel { display: block; }.workspace-panel-head { min-height: 59px; padding: 9px 12px; }.panel-icon { width: 32px; height: 32px; }.workspace-panel-head h2 { font-size: 21px; }.workspace-panel-body { padding: 12px; }.workspace-subhead h3 { font-size: 17px; }.workspace-empty { min-height: 170px; padding: 20px 12px; }.workspace-empty > strong { font-size: 10px; }.workspace-empty p { font-size: 8px; }.deliver-empty { min-height: 153px; }.product-row { min-height: 61px; }.order-compose { padding-top: 11px; }.orders-history { padding-top: 12px; }.workspace-grid + .dashboard-footer { width: auto; margin: 13px 19px 0; padding-bottom: 18px; font-size: 7px; }.dashboard-shell > .mobile-nav { height: calc(59px + env(safe-area-inset-bottom)); }.profile-menu { right: -2px; }.dashboard-user { gap: 6px; }.dashboard-user > span:nth-child(2) { max-width: 95px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.availability-card { padding: 10px; }.delivery-card { padding: 9px; }.earnings-total > strong { font-size: 17px; }
+  .dashboard-topbar { padding: 0 17px; }.dashboard-welcome { width: auto; margin: 21px 19px 14px; }.dashboard-welcome h1 { font-size: 27px; }.dashboard-welcome p { font-size: 9px; }.workspace-switch { width: calc(100% - 38px); grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 auto 13px; }.workspace-switch button { min-height: 35px; gap: 4px; font-size: 8px; letter-spacing: .3px; }.dashboard-alert { width: calc(100% - 38px); margin-bottom: 9px; font-size: 9px; }.workspace-grid { width: auto; display: block; margin: 0 19px; }.workspace-grid .workspace-panel { display: none; }.workspace-grid:not(.show-deliver) .order-panel, .workspace-grid.show-deliver .deliver-panel { display: block; }.workspace-panel-head { min-height: 59px; padding: 9px 12px; }.panel-icon { width: 32px; height: 32px; }.workspace-panel-head h2 { font-size: 21px; }.workspace-panel-body { padding: 12px; }.workspace-subhead h3 { font-size: 17px; }.workspace-empty { min-height: 170px; padding: 20px 12px; }.workspace-empty > strong { font-size: 10px; }.workspace-empty p { font-size: 8px; }.deliver-empty { min-height: 153px; }.product-row { min-height: 61px; }.order-compose { padding-top: 11px; }.orders-history { padding-top: 12px; }.workspace-grid + .dashboard-footer, .pickup-workspace + .dashboard-footer { width: auto; margin: 13px 19px 0; padding-bottom: 18px; font-size: 7px; }.dashboard-shell > .mobile-nav { height: calc(59px + env(safe-area-inset-bottom)); }.profile-menu { right: -2px; }.dashboard-user { gap: 6px; }.dashboard-user > span:nth-child(2) { max-width: 95px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.availability-card { padding: 10px; }.delivery-card { padding: 9px; }.earnings-total > strong { font-size: 17px; }
+}
+
+.pickup-workspace { width: min(100% - 64px, 1320px); min-width: 0; margin: 0 auto; padding: 2px 0 8px; }
+.pickup-back { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 16px; padding: 5px 0; border: 0; color: #63806a; background: transparent; font: inherit; font-size: 10px; font-weight: 650; cursor: pointer; }
+.pickup-back:hover { color: var(--forest); }
+.pickup-heading { display: flex; align-items: start; justify-content: space-between; gap: 14px; margin: 3px 0 17px; }
+.pickup-heading h2 { margin: 6px 0 5px; color: var(--forest); font-family: var(--display); font-size: 26px; font-weight: 500; }
+.pickup-heading p, .pickup-section-heading p { color: #828b82; font-size: 10px; line-height: 1.5; }
+.pickup-refresh { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid #e2e8df; border-radius: 3px; color: #628069; background: #fff; cursor: pointer; }
+.pickup-refresh:disabled { opacity: .55; cursor: wait; }
+.pickup-location-grid, .pickup-rider-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
+.pickup-location-card, .pickup-rider-card { min-width: 0; padding: 17px; border: 1px solid #e1e8de; border-radius: 3px; background: #fff; box-shadow: 0 2px 8px #1e3e2909; }
+.pickup-location-icon, .pickup-conversation-icon, .pickup-chat-icon { width: 39px; height: 39px; display: grid; place-items: center; border-radius: 50%; color: #4d7957; background: #edf3e8; }
+.pickup-location-card h3 { margin: 14px 0 5px; color: #314536; font-family: var(--display); font-size: 20px; font-weight: 500; }
+.pickup-location-card p { min-height: 32px; color: #828b82; font-size: 9px; line-height: 1.6; }
+.pickup-location-card button, .pickup-chat-button { width: 100%; min-height: 37px; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; padding: 0 11px; border: 1px solid #d7e3d2; border-radius: 2px; color: #426f4e; background: #f4f8f1; font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.pickup-location-card button:hover, .pickup-chat-button:hover:not(:disabled) { border-color: #acc5a8; background: #edf4e8; }
+.pickup-location-card button:disabled, .pickup-chat-button:disabled { opacity: .55; cursor: wait; }
+.pickup-rider-settings, .pickup-list-section { margin-top: 25px; padding: 16px; border: 1px solid #e2e8df; border-radius: 3px; background: #fff; }
+.pickup-section-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.pickup-section-heading h3 { margin: 5px 0; color: #34483a; font-family: var(--display); font-size: 20px; font-weight: 500; }
+.pickup-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; color: #7c877d; font-size: 8px; font-weight: 750; letter-spacing: .8px; }
+.pickup-status i, .pickup-rider-profile small i { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: #aab1aa; }
+.pickup-status.online { color: #4a7c53; }.pickup-status.online i, .pickup-rider-profile small i { background: #67a46b; }
+.pickup-location-options { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+.pickup-location-options label { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid #e4e9e1; border-radius: 2px; color: #566759; background: #fcfdfa; font-size: 9px; cursor: pointer; }
+.pickup-location-options input { accent-color: #4b7b55; }
+.pickup-rider-settings-actions { display: flex; align-items: center; gap: 9px; margin-top: 14px; }
+.pickup-rider-settings-actions > span { margin-right: auto; color: #828b82; font-size: 9px; }
+.pickup-rider-settings-actions button, .pickup-send-quote { min-height: 34px; padding: 0 11px; border: 1px solid #d9e4d5; border-radius: 2px; color: #fff; background: var(--forest); font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; }
+.pickup-rider-settings-actions button:disabled, .pickup-send-quote:disabled { opacity: .55; cursor: wait; }
+.pickup-rider-settings-actions button.pickup-secondary-button { color: #52775a; background: #f8faf6; }
+.pickup-list-section { padding: 14px 16px; }
+.pickup-list-section .pickup-section-heading { align-items: center; margin-bottom: 12px; }
+.pickup-list-section .pickup-section-heading h3 { margin-bottom: 0; }
+.pickup-empty-line { padding: 12px 0 3px; color: #899188; font-size: 9px; }
+.pickup-conversation-list, .pickup-order-list { display: grid; gap: 8px; }
+.pickup-conversation-row { width: 100%; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid #e9ede6; border-radius: 2px; color: #738075; background: #fff; text-align: left; cursor: pointer; }
+.pickup-conversation-row:hover { border-color: #cdddc8; background: #fbfcf9; }
+.pickup-conversation-icon { width: 32px; height: 32px; flex: 0 0 auto; }
+.pickup-conversation-copy { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.pickup-conversation-copy strong { overflow: hidden; color: #415345; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.pickup-conversation-copy small { overflow: hidden; color: #899188; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.pickup-order-card { padding: 11px; border: 1px solid #e8ede5; border-radius: 2px; background: #fcfdfa; }
+.pickup-order-top, .pickup-order-bottom { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+.pickup-order-top strong { color: #3e5643; font-size: 10px; }
+.pickup-order-status { color: #4b7957; font-size: 8px; font-weight: 700; }
+.pickup-order-card > p { margin: 7px 0 4px; color: #5f6d61; font-size: 9px; }
+.pickup-order-card > small { color: #889188; font-size: 8px; }
+.pickup-order-card > small.pickup-payment-note { display: block; margin-top: 5px; }
+.pickup-order-bottom { flex-wrap: wrap; margin-top: 10px; color: #68766a; font-size: 8px; }
+.pickup-order-bottom > span strong { color: #3d5944; }
+.pickup-order-bottom > span small { color: #8a9389; }
+.pickup-order-bottom button { min-height: 28px; padding: 0 8px; border: 1px solid #d7e3d2; border-radius: 2px; color: #4c7654; background: #f2f7ee; font: inherit; font-size: 8px; font-weight: 700; cursor: pointer; }
+.pickup-order-bottom button.pickup-cancel-button { border-color: #ead5cf; color: #9a5145; background: #fff8f6; }
+.pickup-loading { min-height: 105px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #778278; font-size: 10px; }
+.pickup-loading svg { animation: spin 900ms linear infinite; }
+.pickup-empty-state { min-height: 190px; display: grid; justify-items: center; align-content: center; text-align: center; }
+.pickup-empty-state > span { width: 43px; height: 43px; display: grid; place-items: center; border-radius: 50%; color: #59805f; background: #edf3e8; }
+.pickup-empty-state h3 { margin: 12px 0 5px; color: #405243; font-family: var(--display); font-size: 18px; font-weight: 500; }
+.pickup-empty-state p { color: #899188; font-size: 9px; }
+.pickup-alert { min-height: 38px; display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 10px; border: 1px solid; border-radius: 2px; font-size: 9px; line-height: 1.5; }
+.pickup-alert > svg { flex: 0 0 auto; }
+.pickup-alert button { margin-left: auto; border: 0; color: inherit; background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
+.pickup-alert.error { border-color: #e8c5bc; color: #873c2f; background: #fff4f0; }
+.pickup-alert.success { border-color: #c8ddc8; color: #365f40; background: #f2f8ef; }
+.pickup-rider-profile { display: flex; align-items: center; gap: 10px; }
+.pickup-rider-profile > span, .pickup-rider-profile > img { width: 40px; height: 40px; display: grid; flex: 0 0 auto; place-items: center; overflow: hidden; border-radius: 50%; color: #fff; background: #4e7958; object-fit: cover; font-size: 14px; font-weight: 700; }
+.pickup-rider-profile > div { min-width: 0; display: grid; gap: 5px; }
+.pickup-rider-profile strong { overflow: hidden; color: #3a5040; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.pickup-rider-profile small { display: inline-flex; align-items: center; gap: 5px; color: #5c8a62; font-size: 8px; }
+.pickup-rider-profile small i { width: 6px; height: 6px; }
+.pickup-rider-verified { display: flex; align-items: center; gap: 5px; margin: 12px 0; color: #54805a; font-size: 8px; }
+.pickup-rider-facts { display: grid; grid-template-columns: 1fr auto; gap: 7px; padding: 10px 0; border-top: 1px solid #edf0ea; color: #818a80; font-size: 8px; }
+.pickup-rider-facts strong { color: #4b5f4e; font-size: 8px; text-align: right; }
+.pickup-fee-note { color: #956c3d; font-size: 8px; line-height: 1.5; }
+.pickup-unconfigured-fee { margin: 0; padding: 10px 13px; border-top: 1px solid #e7ece5; background: #fffaf2; }
+.pickup-chat-button { justify-content: center; margin-top: 12px; }
+.pickup-chat-panel { min-height: 470px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e1e8de; border-radius: 3px; background: #fff; box-shadow: 0 2px 9px #1e3e2910; }
+.pickup-chat-header { min-height: 61px; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #e8ece5; }
+.pickup-chat-icon { width: 34px; height: 34px; flex: 0 0 auto; }
+.pickup-chat-header > div { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.pickup-chat-header > div strong { overflow: hidden; color: #405343; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.pickup-chat-header > div small { color: #879087; font-size: 8px; }
+.pickup-chat-state { color: #9a6e40; font-size: 7px; font-weight: 750; letter-spacing: .7px; }
+.pickup-chat-state.open { color: #4d8057; }
+.pickup-chat-events { min-height: 260px; max-height: 48vh; display: flex; flex-direction: column; align-items: stretch; gap: 11px; overflow-y: auto; padding: 15px; background: #fbfcf9; }
+.pickup-chat-empty { min-height: 220px; display: grid; justify-items: center; align-content: center; gap: 8px; color: #849086; text-align: center; }
+.pickup-chat-empty svg { color: #628468; }
+.pickup-chat-empty strong { color: #4b5d4d; font-family: var(--display); font-size: 17px; font-weight: 500; }
+.pickup-chat-empty span { max-width: 260px; font-size: 9px; line-height: 1.5; }
+.pickup-message { max-width: min(78%, 570px); align-self: flex-start; padding: 9px 11px; border: 1px solid #e5eae2; border-radius: 3px 10px 10px 10px; background: #fff; }
+.pickup-message.mine { align-self: flex-end; border-color: #dce8d7; border-radius: 10px 3px 10px 10px; background: #f1f6ec; }
+.pickup-message-byline { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+.pickup-message-byline strong { color: #4c6a50; font-size: 8px; }
+.pickup-message-byline time { color: #9aa197; font-size: 7px; }
+.pickup-message p { color: #465448; font-size: 9px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+.pickup-quote-card { width: min(100%, 450px); align-self: center; padding: 13px; border: 1px solid #dce7d7; border-radius: 3px; background: #fff; }
+.pickup-quote-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 9px; border-bottom: 1px solid #edf0ea; }
+.pickup-quote-heading strong { color: #3e5944; font-size: 10px; }
+.pickup-quote-heading span { color: #788579; font-size: 8px; text-transform: capitalize; }
+.pickup-quote-items, .pickup-quote-total { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; padding: 10px 0; color: #667469; font-size: 8px; }
+.pickup-quote-items > div { display: contents; }
+.pickup-quote-items strong { color: #485d4b; font-size: 8px; }
+.pickup-quote-items small { grid-column: 1/-1; margin-top: -5px; color: #929a91; font-size: 7px; }
+.pickup-quote-total { border-top: 1px solid #edf0ea; }
+.pickup-quote-total strong { color: #4a5d4c; font-size: 8px; text-align: right; }
+.pickup-quote-total strong svg { vertical-align: middle; }
+.pickup-quote-total b { padding-top: 6px; border-top: 1px solid #e5ebe2; color: #34503a; font-size: 9px; }
+.pickup-quote-actions { display: grid; grid-template-columns: 1fr auto auto; align-items: end; gap: 7px; padding-top: 9px; border-top: 1px solid #edf0ea; }
+.pickup-quote-actions label, .pickup-quote-draft-footer label { display: grid; gap: 5px; color: #748174; font-size: 8px; }
+.pickup-quote-actions input, .pickup-quote-draft-row input, .pickup-quote-draft-footer input { min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #e1e7de; border-radius: 2px; outline: 0; color: #405144; background: #fff; font: inherit; font-size: 9px; }
+.pickup-quote-actions input:focus, .pickup-quote-draft-row input:focus, .pickup-quote-draft-footer input:focus { border-color: #91ad8f; }
+.pickup-quote-actions button { min-height: 32px; padding: 0 8px; border: 1px solid #dfe6dc; border-radius: 2px; color: #657267; background: #fff; font: inherit; font-size: 8px; font-weight: 700; cursor: pointer; }
+.pickup-quote-actions button:last-child { border-color: var(--forest); color: #fff; background: var(--forest); }
+.pickup-quote-actions button:disabled { opacity: .55; cursor: wait; }
+.pickup-quote-form { display: grid; gap: 9px; padding: 12px 14px; border-top: 1px solid #e7ece5; background: #fff; }
+.pickup-quote-form-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pickup-quote-form-heading > div { display: grid; gap: 4px; }
+.pickup-quote-form-heading strong { color: #465a48; font-size: 9px; }
+.pickup-quote-form-heading > span { color: #8a9389; font-size: 7px; }
+.pickup-quote-draft-row { display: grid; grid-template-columns: minmax(90px, 1fr) 65px 90px 28px; gap: 6px; }
+.pickup-quote-draft-row input[type="number"] { width: 100%; }
+.pickup-remove-item { display: grid; place-items: center; border: 1px solid #eadbd7; border-radius: 2px; color: #98574b; background: #fff9f7; cursor: pointer; }
+.pickup-quote-draft-footer { display: grid; grid-template-columns: auto 1fr minmax(110px, .55fr); align-items: end; gap: 8px; }
+.pickup-add-item { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 8px; border: 1px solid #dfe6dc; border-radius: 2px; color: #52775a; background: #fbfcf9; font: inherit; font-size: 8px; cursor: pointer; }
+.pickup-send-quote { justify-self: end; display: inline-flex; align-items: center; gap: 7px; }
+.pickup-message-form { display: flex; align-items: end; gap: 8px; padding: 11px 14px; border-top: 1px solid #e7ece5; background: #fff; }
+.pickup-message-form textarea { min-width: 0; min-height: 42px; max-height: 100px; flex: 1; resize: vertical; padding: 9px 10px; border: 1px solid #e1e7de; border-radius: 2px; outline: 0; color: #405144; background: #fcfdfa; font: inherit; font-size: 9px; line-height: 1.5; }
+.pickup-message-form textarea:focus { border-color: #91ad8f; }
+.pickup-message-form button { width: 39px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 2px; color: #fff; background: var(--forest); cursor: pointer; }
+.pickup-message-form button:disabled { opacity: .5; cursor: not-allowed; }
+.pickup-chat-footer { display: flex; align-items: center; gap: 5px; padding: 0 14px 11px; color: #899188; font-size: 7px; background: #fff; }
+.pickup-payment-note { color: #828b82; font-size: 7px; line-height: 1.5; }
+.pickup-workspace + .dashboard-footer { width: min(100% - 64px, 1320px); margin: 13px auto 0; }
+
+@media (max-width: 900px) {
+  .pickup-workspace { width: min(100% - 44px, 800px); }
+  .pickup-location-grid, .pickup-rider-grid { gap: 9px; }
+  .pickup-location-card, .pickup-rider-card { padding: 13px; }
+  .pickup-workspace + .dashboard-footer { width: min(100% - 44px, 800px); }
+}
+
+@media (max-width: 650px) {
+  .pickup-workspace { width: auto; margin: 0 19px; padding-top: 0; }
+  .pickup-heading { margin-top: 8px; }
+  .pickup-heading h2 { font-size: 22px; }
+  .pickup-heading p, .pickup-section-heading p { font-size: 9px; }
+  .pickup-location-grid, .pickup-rider-grid { grid-template-columns: 1fr; gap: 9px; }
+  .pickup-location-card { display: grid; grid-template-columns: 39px 1fr; align-items: center; column-gap: 11px; padding: 13px; }
+  .pickup-location-icon { grid-row: span 2; }
+  .pickup-location-card h3 { margin: 0 0 3px; font-size: 18px; }
+  .pickup-location-card p { min-height: 0; grid-column: 2; }
+  .pickup-location-card button { grid-column: 1/-1; margin-top: 10px; }
+  .pickup-rider-settings, .pickup-list-section { margin-top: 15px; padding: 12px; }
+  .pickup-section-heading h3 { font-size: 18px; }
+  .pickup-rider-settings-actions { flex-wrap: wrap; }
+  .pickup-rider-settings-actions > span { width: 100%; }
+  .pickup-conversation-row { padding: 8px; }
+  .pickup-chat-panel { min-height: 430px; }
+  .pickup-chat-events { min-height: 230px; max-height: 43vh; padding: 10px; }
+  .pickup-message { max-width: 90%; }
+  .pickup-quote-card { padding: 10px; }
+  .pickup-quote-actions { grid-template-columns: 1fr 1fr; }
+  .pickup-quote-actions label { grid-column: 1/-1; }
+  .pickup-quote-draft-row { grid-template-columns: minmax(70px, 1fr) 52px 77px 24px; gap: 4px; }
+  .pickup-quote-draft-row input { padding: 0 5px; font-size: 8px; }
+  .pickup-quote-draft-footer { grid-template-columns: 1fr 1fr; }
+  .pickup-add-item { grid-column: 1/-1; }
+  .pickup-message-form { padding: 9px; }
+  .pickup-chat-footer { padding: 0 9px 9px; }
 }
