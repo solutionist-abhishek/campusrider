@@ -47,6 +47,29 @@ type Rider = {
   capacity: number
   delivery_fee: number
 }
+type RiderDiscoveryStatus =
+  | 'verification_incomplete'
+  | 'no_rider_mode'
+  | 'offline'
+  | 'location'
+  | 'pricing'
+  | 'capacity'
+  | 'available'
+
+const riderDiscoveryStatuses = new Set<string>([
+  'verification_incomplete',
+  'no_rider_mode',
+  'offline',
+  'location',
+  'pricing',
+  'capacity',
+  'available',
+])
+
+function isRiderDiscoveryStatus(value: unknown): value is RiderDiscoveryStatus {
+  return typeof value === 'string' && riderDiscoveryStatuses.has(value)
+}
+
 type ConversationSummary = {
   conversation_id: string
   pickup_location_id: PickupLocationId
@@ -105,11 +128,53 @@ function formatTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
+function getRiderDiscoveryEmptyState(status: RiderDiscoveryStatus | null, locationName: string) {
+  switch (status) {
+    case 'verification_incomplete':
+      return {
+        title: 'Email verification is required',
+        message: 'Students must verify their NIT Srinagar email before they can activate rider mode.',
+      }
+    case 'no_rider_mode':
+      return {
+        title: 'No students have activated rider mode yet',
+        message: 'A verified student must activate rider mode and finish the setup below before appearing here.',
+      }
+    case 'offline':
+      return {
+        title: 'No riders are online right now',
+        message: 'Riders must switch online to accept new pickup requests.',
+      }
+    case 'location':
+      return {
+        title: `No online riders serve ${locationName}`,
+        message: 'Riders must select this pickup point in their delivery settings.',
+      }
+    case 'pricing':
+      return {
+        title: 'Rider pricing is not configured yet',
+        message: 'Riders need a valid delivery price for this pickup point. The administrator must configure its allowed price range first.',
+      }
+    case 'capacity':
+      return {
+        title: 'Available riders are at capacity',
+        message: 'Try again later when an online rider has capacity for a new request.',
+      }
+    default:
+      return {
+        title: 'No riders are available right now',
+        message: 'Try again shortly or choose another pickup location.',
+      }
+  }
+}
+
 export default function PickupWorkspace({ session, previewMode }: { session: Session; previewMode: boolean }) {
   const [page, setPage] = useState<PickupPage>('locations')
   const [selectedLocation, setSelectedLocation] = useState<PickupLocationId | null>(null)
   const [riders, setRiders] = useState<Rider[]>([])
   const [ridersLoading, setRidersLoading] = useState(false)
+  const [riderDiscoveryStatus, setRiderDiscoveryStatus] = useState<RiderDiscoveryStatus | null>(null)
+  const [riderDiscoveryError, setRiderDiscoveryError] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([])
@@ -140,6 +205,7 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
   const [notice, setNotice] = useState('')
   const [nextItemKey, setNextItemKey] = useState(2)
   const timelineEnd = useRef<HTMLDivElement>(null)
+  const riderSearchId = useRef(0)
 
   async function refreshHome(showLoading = false) {
     if (!supabase) {
@@ -175,15 +241,14 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
       const currentSettings = settingsResult.data?.[0]
       if (currentSettings) {
         const storedFees = (feeResult.data ?? {}) as Partial<Record<PickupLocationId, number>>
-        const nextSupportedLocations = currentSettings.supported_locations ?? []
         setSettings({ ...currentSettings, pickup_delivery_fees: storedFees })
-        setDraftLocations(nextSupportedLocations)
-        setDraftFees({
-          canteen: storedFees.canteen == null ? '' : String(storedFees.canteen),
-          cafeteria: storedFees.cafeteria == null ? '' : String(storedFees.cafeteria),
-          gate: storedFees.gate == null ? '' : String(storedFees.gate),
-        })
         if (!settingsInitialized) {
+          setDraftLocations(currentSettings.supported_locations ?? [])
+          setDraftFees({
+            canteen: storedFees.canteen == null ? '' : String(storedFees.canteen),
+            cafeteria: storedFees.cafeteria == null ? '' : String(storedFees.cafeteria),
+            gate: storedFees.gate == null ? '' : String(storedFees.gate),
+          })
           setSettingsInitialized(true)
         }
       }
@@ -266,22 +331,61 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
     && currentPickup.maximum_rider_delivery_fee !== null
     && currentRiderFee >= Number(currentPickup.minimum_rider_delivery_fee)
     && currentRiderFee <= Number(currentPickup.maximum_rider_delivery_fee)
+  const riderEmptyState = getRiderDiscoveryEmptyState(
+    riderDiscoveryStatus,
+    locations.find((location) => location.id === selectedLocation)?.name ?? 'this pickup point',
+  )
 
   async function chooseLocation(locationId: PickupLocationId) {
+    const requestId = ++riderSearchId.current
     setSelectedLocation(locationId)
     setRiders([])
+    setRiderDiscoveryStatus(null)
+    setRiderDiscoveryError('')
     setPage('riders')
     setRidersLoading(true)
     setError('')
     setNotice('')
     if (!supabase) {
-      setError('Supabase is not configured. Add the project URL and publishable key to the hosting environment.')
+      setRiderDiscoveryError('Rider discovery is not configured. Contact the site administrator.')
       setRidersLoading(false)
       return
     }
-    const { data, error: riderError } = await supabase.rpc('list_available_pickup_riders', { location_id: locationId })
-    if (riderError) setError(`Available riders could not be loaded: ${riderError.message}`)
-    else setRiders(data ?? [])
+    const [riderResult, statusResult] = await Promise.all([
+      supabase.rpc('list_available_pickup_riders', { location_id: locationId }),
+      supabase.rpc('get_pickup_rider_discovery_status', { location_id: locationId }),
+    ])
+    if (requestId !== riderSearchId.current) return
+    if (riderResult.error) {
+      if (import.meta.env.DEV) {
+        console.error('Pickup rider discovery failed:', { code: riderResult.error.code, message: riderResult.error.message })
+      }
+      const denied = riderResult.error.code === '42501'
+        || /permission denied|not authorized/i.test(riderResult.error.message)
+      setRiderDiscoveryError(denied
+        ? 'Access to rider discovery was denied. Sign in with a verified NIT Srinagar account and try again.'
+        : riderResult.error.code === 'PGRST202'
+          ? 'Rider discovery is not configured on Supabase yet. Apply the latest Campus Rider migration.'
+          : 'Riders could not be loaded. Please retry in a moment.')
+    } else {
+      setRiders(riderResult.data ?? [])
+      if (statusResult.error) {
+        if (import.meta.env.DEV) {
+          console.error('Pickup rider availability diagnostics failed:', { code: statusResult.error.code, message: statusResult.error.message })
+        }
+        if ((riderResult.data ?? []).length === 0) {
+          setRiderDiscoveryError(statusResult.error.code === 'PGRST202'
+            ? 'No riders were returned, and availability details are not configured. Apply the latest Campus Rider migration.'
+            : 'No riders were returned, and their availability could not be diagnosed. Please retry.')
+        }
+      } else {
+        if (isRiderDiscoveryStatus(statusResult.data)) {
+          setRiderDiscoveryStatus(statusResult.data)
+        } else if ((riderResult.data ?? []).length === 0) {
+          setRiderDiscoveryError('No riders were returned, and their availability could not be diagnosed. Please retry.')
+        }
+      }
+    }
     setRidersLoading(false)
   }
 
@@ -362,6 +466,10 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
     })
     if (feeErrors.length > 0) {
       setError(feeErrors[0])
+      return
+    }
+    if (online && draftLocations.length === 0) {
+      setError('Choose at least one pickup point before going online.')
       return
     }
     if (online && draftLocations.some((id) => !draftFees[id].trim())) {
@@ -585,7 +693,8 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
             <button className="pickup-refresh" type="button" onClick={() => void chooseLocation(selectedLocation)} disabled={ridersLoading} aria-label="Refresh available riders"><LoaderCircle size={16} /></button>
           </div>
           {ridersLoading ? <div className="pickup-loading"><LoaderCircle size={20} /> Finding available riders…</div>
-            : riders.length === 0 ? <div className="pickup-empty-state"><span><Bike size={23} /></span><h3>No riders are available right now</h3><p>Try again shortly or choose another pickup location.</p></div>
+            : riderDiscoveryError ? <div className="pickup-alert error" role="alert"><CircleHelp size={16} />{riderDiscoveryError}<button type="button" onClick={() => void chooseLocation(selectedLocation)}>Retry</button></div>
+              : riders.length === 0 ? <div className="pickup-empty-state"><span><Bike size={23} /></span><h3>{riderEmptyState.title}</h3><p>{riderEmptyState.message}</p></div>
               : <div className="pickup-rider-grid">{riders.map((rider) => (
                 <article className="pickup-rider-card" key={rider.rider_id}>
                   <div className="pickup-rider-profile">{rider.avatar_url ? <img src={rider.avatar_url} alt="" /> : <span>{rider.full_name.charAt(0).toUpperCase()}</span>}<div><strong>{rider.full_name}</strong><small><i /> Online · available</small></div></div>
