@@ -7,7 +7,10 @@ import {
   CircleHelp,
   Clock3,
   Coffee,
+  Copy,
+  CreditCard,
   DoorOpen,
+  ExternalLink,
   LoaderCircle,
   MapPin,
   MessageCircle,
@@ -18,6 +21,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import QRCode from 'qrcode'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 
@@ -100,6 +104,7 @@ type PickupOrder = {
   status: string
   total_amount: number
   delivery_fee: number | null
+  payment_status: 'unpaid' | 'payment_reported' | 'paid' | 'migration_unavailable'
   delivery_location: string
   created_at: string
   pickup_location_id: PickupLocationId | null
@@ -107,7 +112,31 @@ type PickupOrder = {
   delivery_partner_id: string | null
   order_items: { product_name: string; quantity: number; unit_price: number }[]
 }
+type PickupOrderRow = Omit<PickupOrder, 'payment_status'> & { payment_status?: PickupOrder['payment_status'] }
+type RiderPaymentSettings = {
+  upi_id: string
+  payment_qr_path: string | null
+  payment_enabled: boolean
+}
+type OrderPaymentDetails = {
+  order_id: string
+  order_status: string
+  total_amount: string
+  item_subtotal: string
+  delivery_fee: string
+  payment_status: 'unpaid' | 'payment_reported' | 'paid'
+  payment_reported_at: string | null
+  payment_confirmed_at: string | null
+  rider_id: string
+  rider_name: string
+  rider_upi_id: string | null
+  rider_qr_path: string | null
+}
 type DraftItem = { key: number; name: string; quantity: string; unitPrice: string }
+
+const paymentQrBucket = 'rider-payment-qr'
+const maximumPaymentQrSize = 5 * 1024 * 1024
+const validUpiId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}@[A-Za-z][A-Za-z0-9.-]{0,63}$/
 
 const locations: { id: PickupLocationId; name: string; description: string; Icon: typeof Store }[] = [
   { id: 'canteen', name: 'Canteen', description: 'Find a rider to collect your canteen items.', Icon: Store },
@@ -126,6 +155,40 @@ const orderSteps: Record<string, string> = {
 
 function formatTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+}
+
+function formatAmountForUpi(value: string) {
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value)
+  if (!match) throw new Error('The accepted order total is not a valid INR amount.')
+  return `${match[1]}.${(match[2] ?? '').padEnd(2, '0')}`
+}
+
+function formatAcceptedLineAmount(quantity: number, unitPrice: number) {
+  return (Math.round(unitPrice * 100) * quantity / 100).toFixed(2)
+}
+
+async function hasValidPaymentQrImageSignature(file: File) {
+  const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer())
+  const isPng = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, index) => bytes[index] === byte)
+  const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+  const isWebp = String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF'
+    && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP'
+  return (file.type === 'image/png' && isPng)
+    || (file.type === 'image/jpeg' && isJpeg)
+    || (file.type === 'image/webp' && isWebp)
+}
+
+function buildOrderUpiUri(details: OrderPaymentDetails) {
+  if (!details.rider_upi_id) return null
+  const params = new URLSearchParams({
+    pa: details.rider_upi_id,
+    pn: details.rider_name,
+    am: formatAmountForUpi(details.total_amount),
+    cu: 'INR',
+    tr: details.order_id.replaceAll('-', '').slice(0, 32),
+    tn: `Campus Rider ${details.order_id.slice(0, 8)}`,
+  })
+  return `upi://pay?${params.toString()}`
 }
 
 function getRiderDiscoveryEmptyState(status: RiderDiscoveryStatus | null, locationName: string) {
@@ -181,6 +244,27 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
   const [events, setEvents] = useState<ChatEvent[]>([])
   const [chatLoading, setChatLoading] = useState(false)
   const [orders, setOrders] = useState<PickupOrder[]>([])
+  const [riderPaymentSettings, setRiderPaymentSettings] = useState<RiderPaymentSettings>({
+    upi_id: '',
+    payment_qr_path: null,
+    payment_enabled: false,
+  })
+  const [paymentQrFile, setPaymentQrFile] = useState<File | null>(null)
+  const [removeSavedPaymentQr, setRemoveSavedPaymentQr] = useState(false)
+  const [savedPaymentQrUrl, setSavedPaymentQrUrl] = useState('')
+  const [paymentSettingsBusy, setPaymentSettingsBusy] = useState(false)
+  const [paymentSettingsInitialized, setPaymentSettingsInitialized] = useState(false)
+  const [paymentMigrationMissing, setPaymentMigrationMissing] = useState(false)
+  const [paymentSettingsError, setPaymentSettingsError] = useState('')
+  const [paymentSettingsNotice, setPaymentSettingsNotice] = useState('')
+  const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null)
+  const [paymentDetails, setPaymentDetails] = useState<OrderPaymentDetails | null>(null)
+  const [paymentQrDataUrl, setPaymentQrDataUrl] = useState('')
+  const [paymentLoading, setPaymentLoading] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
+  const [paymentActionBusy, setPaymentActionBusy] = useState(false)
+  const [paymentActionNotice, setPaymentActionNotice] = useState('')
+  const [copyNotice, setCopyNotice] = useState('')
   const [settings, setSettings] = useState<RiderSettings>({
     is_online: false,
     supported_locations: [],
@@ -207,6 +291,26 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
   const [nextItemKey, setNextItemKey] = useState(2)
   const timelineEnd = useRef<HTMLDivElement>(null)
   const riderSearchId = useRef(0)
+  const paymentModalRef = useRef<HTMLElement | null>(null)
+  const paymentReturnFocusRef = useRef<HTMLElement | null>(null)
+  const [paymentQrPreviewUrl, setPaymentQrPreviewUrl] = useState('')
+  const paymentQrPreviewUrlRef = useRef('')
+
+  function updatePaymentQrFile(file: File | null) {
+    if (paymentQrPreviewUrlRef.current) URL.revokeObjectURL(paymentQrPreviewUrlRef.current)
+    paymentQrPreviewUrlRef.current = file ? URL.createObjectURL(file) : ''
+    setPaymentQrFile(file)
+    setPaymentQrPreviewUrl(paymentQrPreviewUrlRef.current)
+  }
+
+  useEffect(() => () => {
+    if (paymentQrPreviewUrlRef.current) URL.revokeObjectURL(paymentQrPreviewUrlRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (paymentOrderId) paymentModalRef.current?.focus()
+    else paymentReturnFocusRef.current?.focus()
+  }, [paymentOrderId])
 
   async function refreshHome(showLoading = false) {
     if (!supabase) {
@@ -215,21 +319,40 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
       return
     }
     if (showLoading) setLoading(true)
-    const [locationResult, conversationResult, orderResult, settingsResult, feeResult] = await Promise.all([
+    const [locationResult, conversationResult, orderResult, settingsResult, feeResult, paymentSettingsResult] = await Promise.all([
       supabase.from('pickup_locations')
         .select('id,name,minimum_rider_delivery_fee,maximum_rider_delivery_fee')
         .eq('is_active', true),
       supabase.rpc('get_my_pickup_conversations'),
       supabase.from('orders')
-        .select('id,status,total_amount,delivery_fee,delivery_location,created_at,pickup_location_id,accepted_quote_id,delivery_partner_id,order_items(product_name,quantity,unit_price)')
+        .select('id,status,total_amount,delivery_fee,payment_status,delivery_location,created_at,pickup_location_id,accepted_quote_id,delivery_partner_id,order_items(product_name,quantity,unit_price)')
         .or(`customer_id.eq.${session.user.id},delivery_partner_id.eq.${session.user.id}`)
         .not('accepted_quote_id', 'is', null)
         .order('created_at', { ascending: false })
         .limit(30),
       supabase.rpc('get_my_rider_pickup_settings'),
       supabase.rpc('get_my_rider_pickup_fees'),
+      supabase.rpc('get_my_rider_payment_settings'),
     ])
-    const failure = locationResult.error ?? conversationResult.error ?? orderResult.error ?? settingsResult.error ?? feeResult.error
+    let orderRows: PickupOrderRow[] | null = orderResult.data
+    let orderError = orderResult.error
+    const paymentColumnMissing = Boolean(orderError
+      && ['42703', 'PGRST204'].includes(orderError.code)
+      && orderError.message.includes('payment_status'))
+    if (paymentColumnMissing) {
+      const fallbackOrders = await supabase.from('orders')
+        .select('id,status,total_amount,delivery_fee,delivery_location,created_at,pickup_location_id,accepted_quote_id,delivery_partner_id,order_items(product_name,quantity,unit_price)')
+        .or(`customer_id.eq.${session.user.id},delivery_partner_id.eq.${session.user.id}`)
+        .not('accepted_quote_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(30)
+      orderRows = fallbackOrders.data
+      orderError = fallbackOrders.error
+    }
+    const paymentMigrationUnavailable = paymentColumnMissing || paymentSettingsResult.error?.code === 'PGRST202'
+    setPaymentMigrationMissing(paymentMigrationUnavailable)
+    const failure = locationResult.error ?? conversationResult.error ?? orderError ?? settingsResult.error ?? feeResult.error
+      ?? (paymentSettingsResult.error?.code === 'PGRST202' ? null : paymentSettingsResult.error)
     if (failure) {
       setError(`Pickup services could not be loaded: ${failure.message}`)
     } else if (locations.some((location) => !(locationResult.data ?? []).some((row) => row.id === location.id && row.name === location.name))) {
@@ -238,7 +361,19 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
       setError('')
       setPickupLocations(locationResult.data ?? [])
       setConversations(conversationResult.data ?? [])
-      setOrders(orderResult.data ?? [])
+      setOrders((orderRows ?? []).map((order) => ({
+        ...order,
+        payment_status: paymentColumnMissing ? 'migration_unavailable' as const : order.payment_status ?? 'unpaid',
+      })))
+      const paymentSettings = paymentSettingsResult.data?.[0]
+      if (!paymentSettingsInitialized && !paymentSettingsResult.error) {
+        setRiderPaymentSettings({
+          upi_id: paymentSettings?.upi_id ?? '',
+          payment_qr_path: paymentSettings?.payment_qr_path ?? null,
+          payment_enabled: paymentSettings?.payment_enabled ?? false,
+        })
+        setPaymentSettingsInitialized(true)
+      }
       const currentSettings = settingsResult.data?.[0]
       if (currentSettings) {
         const storedFees = (feeResult.data ?? {}) as Partial<Record<PickupLocationId, number>>
@@ -258,6 +393,26 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
   }
 
   const refreshHomeEvent = useEffectEvent(refreshHome)
+
+  useEffect(() => {
+    let cancelled = false
+    const qrPath = riderPaymentSettings.payment_qr_path
+    if (!supabase || !qrPath) return
+    void supabase.storage.from(paymentQrBucket).createSignedUrl(qrPath, 1800).then(({ data, error: signedUrlError }) => {
+      if (cancelled) return
+      if (signedUrlError) {
+        if (import.meta.env.DEV) {
+          console.error('Could not load the saved rider QR image:', { message: signedUrlError.message })
+        }
+        setPaymentSettingsError('The saved QR image could not be loaded. Try refreshing or uploading it again.')
+        return
+      }
+      setSavedPaymentQrUrl(data.signedUrl)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [riderPaymentSettings.payment_qr_path])
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => void refreshHomeEvent(true), 0)
@@ -586,6 +741,177 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
     setBusy(false)
   }
 
+  async function saveRiderPaymentSettings() {
+    if (!supabase || paymentSettingsBusy) return
+    setPaymentSettingsError('')
+    setPaymentSettingsNotice('')
+    const upiId = riderPaymentSettings.upi_id.trim()
+    if (upiId && !validUpiId.test(upiId)) {
+      setPaymentSettingsError('Enter a valid UPI ID, for example name@bank, or leave it blank.')
+      return
+    }
+    const willHaveQr = paymentQrFile !== null || (!removeSavedPaymentQr && riderPaymentSettings.payment_qr_path !== null)
+    if (riderPaymentSettings.payment_enabled && !upiId && !willHaveQr) {
+      setPaymentSettingsError('Add a UPI ID or upload a QR image before enabling UPI payments.')
+      return
+    }
+    if (paymentQrFile && (!['image/png', 'image/jpeg', 'image/webp'].includes(paymentQrFile.type)
+      || paymentQrFile.size > maximumPaymentQrSize
+      || !(await hasValidPaymentQrImageSignature(paymentQrFile)))) {
+      setPaymentSettingsError('Choose a valid PNG, JPG, or WebP image no larger than 5 MB.')
+      return
+    }
+
+    setPaymentSettingsBusy(true)
+    const objectPath = `${session.user.id}/payment-qr`
+    if (paymentQrFile) {
+      const { error: uploadError } = await supabase.storage.from(paymentQrBucket).upload(objectPath, paymentQrFile, {
+        cacheControl: '3600',
+        contentType: paymentQrFile.type,
+        upsert: true,
+      })
+      if (uploadError) {
+        if (import.meta.env.DEV) console.error('Rider payment QR upload failed:', { message: uploadError.message })
+        setPaymentSettingsError('The QR image could not be uploaded. Check your connection and try again.')
+        setPaymentSettingsBusy(false)
+        return
+      }
+    } else if (removeSavedPaymentQr && riderPaymentSettings.payment_qr_path) {
+      const { error: removeError } = await supabase.storage.from(paymentQrBucket).remove([objectPath])
+      if (removeError) {
+        if (import.meta.env.DEV) console.error('Rider payment QR removal failed:', { message: removeError.message })
+        setPaymentSettingsError('The saved QR image could not be removed. Try again.')
+        setPaymentSettingsBusy(false)
+        return
+      }
+    }
+
+    const { error: saveError } = await supabase.rpc('save_my_rider_payment_settings', {
+      configured_upi_id: upiId || null,
+      enable_payments: riderPaymentSettings.payment_enabled,
+    })
+    if (saveError) {
+      if (import.meta.env.DEV) console.error('Saving rider payment settings failed:', { code: saveError.code, message: saveError.message })
+      setPaymentSettingsError(saveError.message)
+    } else {
+      const nextQrPath = paymentQrFile
+        ? objectPath
+        : removeSavedPaymentQr
+          ? null
+          : riderPaymentSettings.payment_qr_path
+      setRiderPaymentSettings({ ...riderPaymentSettings, upi_id: upiId, payment_qr_path: nextQrPath })
+      updatePaymentQrFile(null)
+      setRemoveSavedPaymentQr(false)
+      if (!nextQrPath) setSavedPaymentQrUrl('')
+      else if (paymentQrFile) {
+        const { data: signedData, error: signedError } = await supabase.storage.from(paymentQrBucket).createSignedUrl(nextQrPath, 1800)
+        if (signedError) {
+          if (import.meta.env.DEV) console.error('Could not load the saved rider QR image:', { message: signedError.message })
+          setPaymentSettingsError('Payment settings were saved, but the QR preview could not be refreshed.')
+        } else setSavedPaymentQrUrl(signedData.signedUrl)
+      }
+      setPaymentSettingsInitialized(true)
+      setPaymentSettingsNotice('Payment settings saved. UPI payments are manual and are not verified by Campus Rider.')
+      await refreshHome()
+    }
+    setPaymentSettingsBusy(false)
+  }
+
+  async function openOrderPayment(orderId: string) {
+    if (!supabase) return
+    if (!paymentOrderId && document.activeElement instanceof HTMLElement) {
+      paymentReturnFocusRef.current = document.activeElement
+    }
+    setPaymentOrderId(orderId)
+    setPaymentDetails(null)
+    setPaymentQrDataUrl('')
+    setPaymentError('')
+    setPaymentActionNotice('')
+    setCopyNotice('')
+    setPaymentLoading(true)
+
+    const { data, error: detailsError } = await supabase.rpc('get_pickup_order_payment_details', { order_uuid: orderId })
+    const details = data?.[0] as OrderPaymentDetails | undefined
+    if (detailsError || !details) {
+      if (detailsError && import.meta.env.DEV) {
+        console.error('Loading authorized pickup payment details failed:', { code: detailsError.code, message: detailsError.message })
+      }
+      setPaymentError(detailsError?.code === 'PGRST202'
+        ? 'Payment features are not installed on Supabase yet. Apply the latest payment migration.'
+        : 'Payment details could not be loaded for this order.')
+      setPaymentLoading(false)
+      return
+    }
+    setPaymentDetails(details)
+    try {
+      const upiUri = buildOrderUpiUri(details)
+      if (upiUri) {
+        setPaymentQrDataUrl(await QRCode.toDataURL(upiUri, { errorCorrectionLevel: 'M', margin: 2, width: 360 }))
+      } else if (details.rider_qr_path) {
+        const { data: signedData, error: signedError } = await supabase.storage
+          .from(paymentQrBucket)
+          .createSignedUrl(details.rider_qr_path, 600)
+        if (signedError) throw signedError
+        setPaymentQrDataUrl(signedData.signedUrl)
+      }
+    } catch (qrError) {
+      if (import.meta.env.DEV) {
+        console.error('Preparing order payment QR failed:', qrError instanceof Error ? qrError.message : 'Unknown QR error')
+      }
+      setPaymentError('The rider’s QR code could not be prepared. Try again or contact the rider.')
+    }
+    setPaymentLoading(false)
+  }
+
+  function closeOrderPayment() {
+    setPaymentOrderId(null)
+    setPaymentDetails(null)
+    setPaymentQrDataUrl('')
+  }
+
+  async function reportPaymentMade() {
+    if (!supabase || !paymentDetails || paymentActionBusy) return
+    setPaymentActionBusy(true)
+    setPaymentError('')
+    const { error: reportError } = await supabase.rpc('report_pickup_order_payment', { order_uuid: paymentDetails.order_id })
+    if (reportError) {
+      if (import.meta.env.DEV) console.error('Reporting pickup payment failed:', { code: reportError.code, message: reportError.message })
+      setPaymentError('Your payment report could not be saved. Please retry.')
+    } else {
+      const orderId = paymentDetails.order_id
+      await refreshHome()
+      await openOrderPayment(orderId)
+      setPaymentActionNotice('Payment reported. It remains unverified until the assigned rider confirms receipt.')
+    }
+    setPaymentActionBusy(false)
+  }
+
+  async function confirmPaymentReceived() {
+    if (!supabase || !paymentDetails || paymentActionBusy) return
+    setPaymentActionBusy(true)
+    setPaymentError('')
+    const { error: confirmError } = await supabase.rpc('confirm_pickup_order_payment', { order_uuid: paymentDetails.order_id })
+    if (confirmError) {
+      if (import.meta.env.DEV) console.error('Confirming pickup payment failed:', { code: confirmError.code, message: confirmError.message })
+      setPaymentError('Payment receipt could not be confirmed. Only the assigned rider can confirm it after checking their UPI app.')
+    } else {
+      const orderId = paymentDetails.order_id
+      await refreshHome()
+      await openOrderPayment(orderId)
+      setPaymentActionNotice('Receipt confirmed by the assigned rider. Campus Rider does not independently verify UPI transfers.')
+    }
+    setPaymentActionBusy(false)
+  }
+
+  async function copyUpiId(upiId: string) {
+    try {
+      await navigator.clipboard.writeText(upiId)
+      setCopyNotice('UPI ID copied.')
+    } catch {
+      setCopyNotice('Could not copy automatically. Select and copy the UPI ID above.')
+    }
+  }
+
   function toggleDraftLocation(locationId: PickupLocationId) {
     setDraftLocations((current) => current.includes(locationId)
       ? current.filter((existing) => existing !== locationId)
@@ -677,6 +1003,56 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
             </div>
           </section>
 
+          <section className="pickup-rider-settings payment-settings">
+            <div className="pickup-section-heading"><div><span className="section-eyebrow">OPTIONAL CUSTOMER PAYMENT</span><h3>Payment Settings</h3><p>Customers can pay you directly by UPI after accepting your quote. Campus Rider does not process or verify transfers.</p></div><span className={`pickup-status ${riderPaymentSettings.payment_enabled ? 'online' : ''}`}><i />{riderPaymentSettings.payment_enabled ? 'ENABLED' : 'DISABLED'}</span></div>
+            {paymentMigrationMissing && <div className="pickup-settings-message" role="status">Apply the latest payment migration in Supabase before enabling UPI payment features. Rider availability, pickup requests, and chat remain available.</div>}
+            {paymentSettingsError && <div className="pickup-settings-error" role="alert"><CircleHelp size={15} />{paymentSettingsError}</div>}
+            {paymentSettingsNotice && <div className="pickup-settings-message payment-settings-success" role="status"><Check size={15} />{paymentSettingsNotice}</div>}
+            <label className="payment-upi-field">UPI ID (optional fallback)
+              <input
+                type="text"
+                autoComplete="off"
+                maxLength={320}
+                value={riderPaymentSettings.upi_id}
+                onChange={(event) => setRiderPaymentSettings((current) => ({ ...current, upi_id: event.target.value }))}
+                placeholder="name@bank"
+                disabled={paymentSettingsBusy || paymentMigrationMissing}
+              />
+              <small>Only the UPI ID format is checked; Campus Rider cannot verify who owns that account.</small>
+            </label>
+            <div className="payment-qr-controls">
+              <label className="payment-qr-upload">Upload UPI QR image
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  disabled={paymentSettingsBusy || paymentMigrationMissing}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null
+                    if (file && (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > maximumPaymentQrSize)) {
+                      setPaymentSettingsError('Choose a PNG, JPG, or WebP image no larger than 5 MB.')
+                      event.target.value = ''
+                      return
+                    }
+                    setPaymentSettingsError('')
+                    updatePaymentQrFile(file)
+                    setRemoveSavedPaymentQr(false)
+                  }}
+                />
+                <small>PNG, JPG, or WebP; maximum 5 MB. Stored privately.</small>
+              </label>
+              {(paymentQrPreviewUrl || (!removeSavedPaymentQr && savedPaymentQrUrl)) && (
+                <div className="payment-qr-preview">
+                  <img src={paymentQrPreviewUrl || savedPaymentQrUrl} alt="Preview of your UPI payment QR code" />
+                  <span>{paymentQrPreviewUrl ? 'Unsaved preview' : 'Saved QR code'}</span>
+                  {riderPaymentSettings.payment_qr_path && !removeSavedPaymentQr && <button type="button" disabled={paymentSettingsBusy || paymentMigrationMissing} onClick={() => { setRemoveSavedPaymentQr(true); updatePaymentQrFile(null); setSavedPaymentQrUrl('') }}>Remove saved QR</button>}
+                  {paymentQrFile && <button type="button" disabled={paymentSettingsBusy || paymentMigrationMissing} onClick={() => updatePaymentQrFile(null)}>Clear new image</button>}
+                </div>
+              )}
+            </div>
+            <label className="payment-enable-option"><input type="checkbox" checked={riderPaymentSettings.payment_enabled} onChange={(event) => setRiderPaymentSettings((current) => ({ ...current, payment_enabled: event.target.checked }))} disabled={paymentSettingsBusy || paymentMigrationMissing} />Enable UPI payment details for accepted orders</label>
+            <div className="payment-settings-footer"><span>Enable only after checking the UPI ID or QR recipient yourself.</span><button type="button" onClick={() => void saveRiderPaymentSettings()} disabled={paymentSettingsBusy || loading || paymentMigrationMissing}>{paymentSettingsBusy ? 'Saving…' : 'Save payment settings'}</button></div>
+          </section>
+
           <section className="pickup-list-section">
             <div className="pickup-section-heading"><div><span className="section-eyebrow">YOUR REQUESTS</span><h3>Conversations</h3></div></div>
             {loading ? <div className="pickup-loading"><LoaderCircle size={18} /> Loading your conversations…</div> : conversations.length === 0
@@ -701,8 +1077,9 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
                   <div className="pickup-order-top"><strong>{locations.find((location) => location.id === order.pickup_location_id)?.name ?? 'Pickup'}</strong><span className="pickup-order-status">{orderSteps[order.status] ?? order.status}</span></div>
                   <p>Deliver to {order.delivery_location}</p>
                   <small>{order.order_items.map((item) => `${item.quantity} × ${item.product_name}`).join(' · ')}</small>
-                  <small className="pickup-payment-note">Campus Rider does not collect or process payment.</small>
-                  <div className="pickup-order-bottom"><span>Items + delivery <strong>₹{Number(order.total_amount).toFixed(2)}</strong>{order.delivery_fee !== null && <small> (₹{Number(order.delivery_fee).toFixed(2)} delivery)</small>}</span>
+                  <small className="pickup-payment-note">Payment: {order.payment_status === 'migration_unavailable' ? 'Unavailable until the payment migration is applied' : order.payment_status === 'paid' ? 'Rider-confirmed' : order.payment_status === 'payment_reported' ? 'Reported by customer · awaiting rider confirmation' : 'Unpaid'}. Campus Rider does not process or verify transfers.</small>
+                  <div className="pickup-order-bottom"><span>Accepted total <strong>₹{Number(order.total_amount).toFixed(2)}</strong>{order.delivery_fee !== null && <small> (₹{Number(order.delivery_fee).toFixed(2)} delivery)</small>}</span>
+                    <button type="button" onClick={() => void openOrderPayment(order.id)}>Pay / payment details</button>
                     {isRider && next && <button type="button" onClick={() => void updateOrder(order.id, next)} disabled={busy}>{next === 'delivered' ? 'Mark delivered' : `Mark ${orderSteps[next]?.toLowerCase()}`}</button>}
                     {order.status === 'accepted' && <button className="pickup-cancel-button" type="button" onClick={() => void updateOrder(order.id, 'cancelled')} disabled={busy}>Cancel</button>}
                   </div>
@@ -746,6 +1123,10 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
                 <div className="pickup-quote-items">{event.quote.quote_items.map((item) => <div key={item.id}><span>{item.quantity} × {item.item_name}</span><strong>₹{Number(item.line_total).toFixed(2)}</strong><small>₹{Number(item.unit_price).toFixed(2)} each</small></div>)}</div>
                 <div className="pickup-quote-total"><span>Items subtotal</span><strong>₹{Number(event.quote.item_subtotal).toFixed(2)}</strong><span>Rider delivery charge</span><strong>₹{Number(event.quote.delivery_fee).toFixed(2)}</strong>{event.quote.delivery_destination && <><span>Destination</span><strong>{event.quote.delivery_destination}</strong></>}{event.quote.estimated_minutes && <><span>Estimated time</span><strong><Clock3 size={13} /> About {event.quote.estimated_minutes} min</strong></>}<b>Total amount</b><b>₹{Number(event.quote.total_amount).toFixed(2)}</b></div>
                 {currentConversation?.is_customer && event.quote.status === 'proposed' && <div className="pickup-quote-actions"><label>Delivery destination<input value={destination || event.quote.delivery_destination || currentConversation.destination || ''} onChange={(inputEvent) => setDestination(inputEvent.target.value)} placeholder="Hostel and room" maxLength={240} /></label><button type="button" onClick={() => void respondToQuote(event.quote.id, false)} disabled={busy}>Reject</button><button type="button" onClick={() => void respondToQuote(event.quote.id, true)} disabled={busy}>Accept quote</button></div>}
+                {event.quote.status === 'accepted' && orders.some((order) => order.accepted_quote_id === event.quote.id) && <button className="payment-chat-link" type="button" onClick={() => {
+                  const acceptedOrder = orders.find((order) => order.accepted_quote_id === event.quote.id)
+                  if (acceptedOrder) void openOrderPayment(acceptedOrder.id)
+                }}><CreditCard size={14} /> Open order payment details</button>}
                 <p className="pickup-payment-note">Campus Rider records the agreed amount but does not collect or process payment.</p>
               </article>)}
             <div ref={timelineEnd} />
@@ -763,6 +1144,70 @@ export default function PickupWorkspace({ session, previewMode }: { session: Ses
           {currentConversation?.conversation_status === 'open' && <form className="pickup-message-form" onSubmit={(event) => void sendMessage(event)}><textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={2000} placeholder="Write a message about items, quantities, or pickup instructions…" aria-label="Message" disabled={busy} /><button type="submit" disabled={busy || !message.trim()} aria-label="Send message">{busy ? <LoaderCircle size={17} /> : <Send size={17} />}</button></form>}
           <footer className="pickup-chat-footer"><MapPin size={13} /> Messages are private to the customer and selected rider.</footer>
         </section>
+      )}
+      {paymentOrderId && (
+        <div className="payment-modal-backdrop" onClick={(event) => {
+          if (event.target === event.currentTarget) closeOrderPayment()
+        }} onKeyDown={(event) => {
+          if (event.key === 'Escape') closeOrderPayment()
+        }}>
+          <section ref={paymentModalRef} className="payment-modal" role="dialog" aria-modal="true" aria-labelledby="pickup-payment-title" tabIndex={-1}>
+            <header className="payment-modal-header">
+              <div><span className="section-eyebrow">ACCEPTED PICKUP ORDER</span><h2 id="pickup-payment-title">Order payment</h2></div>
+              <button type="button" onClick={closeOrderPayment} aria-label="Close payment details"><X size={19} /></button>
+            </header>
+            {paymentLoading ? <div className="pickup-loading"><LoaderCircle size={18} /> Loading authorized payment details…</div>
+              : paymentError && !paymentDetails ? <div className="pickup-settings-error" role="alert"><CircleHelp size={15} />{paymentError}</div>
+                : paymentDetails && (
+                  <>
+                    {paymentError && <div className="pickup-settings-error" role="alert"><CircleHelp size={15} />{paymentError}</div>}
+                    {paymentActionNotice && <div className="pickup-settings-message payment-settings-success" role="status">{paymentActionNotice}</div>}
+                    <div className="payment-order-summary">
+                      <strong>Deliver to {orders.find((order) => order.id === paymentDetails.order_id)?.delivery_location ?? 'your campus location'}</strong>
+                      {(orders.find((order) => order.id === paymentDetails.order_id)?.order_items ?? []).map((item, index) => (
+                        <div key={`${item.product_name}-${index}`}><span>{item.quantity} × {item.product_name}</span><span>₹{formatAcceptedLineAmount(item.quantity, item.unit_price)}</span></div>
+                      ))}
+                      <div><span>Item subtotal</span><span>₹{Number(paymentDetails.item_subtotal).toFixed(2)}</span></div>
+                      <div><span>Agreed delivery charge</span><span>₹{Number(paymentDetails.delivery_fee).toFixed(2)}</span></div>
+                      <div className="payment-order-total"><strong>Total due (INR)</strong><strong>₹{Number(paymentDetails.total_amount).toFixed(2)}</strong></div>
+                    </div>
+                    <p className="payment-state-note">
+                      Payment status: <strong>{paymentDetails.payment_status === 'paid' ? 'Rider-confirmed' : paymentDetails.payment_status === 'payment_reported' ? 'Reported by customer · awaiting rider confirmation' : 'Unpaid'}</strong>
+                      {paymentDetails.payment_reported_at && <> · Reported {formatTime(paymentDetails.payment_reported_at)}</>}
+                      {paymentDetails.payment_confirmed_at && <> · Confirmed {formatTime(paymentDetails.payment_confirmed_at)}</>}
+                    </p>
+                    {paymentDetails.rider_upi_id || paymentDetails.rider_qr_path ? (
+                      <div className="payment-qr-panel">
+                        <h3><CreditCard size={16} /> Pay via UPI QR</h3>
+                        {paymentQrDataUrl
+                          ? <a className="payment-qr-image-link" href={paymentQrDataUrl} target="_blank" rel="noreferrer" aria-label="Open payment QR at full size">
+                            <img className="payment-customer-qr" src={paymentQrDataUrl} alt={`UPI payment QR for ₹${Number(paymentDetails.total_amount).toFixed(2)}, payable to ${paymentDetails.rider_name}`} />
+                          </a>
+                          : <div className="pickup-loading"><LoaderCircle size={18} /> Preparing payment QR…</div>}
+                        <p>Pay exactly <strong>₹{Number(paymentDetails.total_amount).toFixed(2)}</strong> to {paymentDetails.rider_name}. Verify the recipient and amount in your UPI app before paying.</p>
+                        {paymentDetails.rider_upi_id
+                          ? <>                          <label className="payment-upi-copy">Rider-provided UPI ID<input readOnly value={paymentDetails.rider_upi_id} aria-label="Rider UPI ID" /><button type="button" onClick={() => void copyUpiId(paymentDetails.rider_upi_id ?? '')}><Copy size={14} /> Copy UPI ID</button></label>
+                            {copyNotice && <p className="payment-copy-notice" role="status">{copyNotice}</p>}
+                            <a className="payment-open-upi" href={buildOrderUpiUri(paymentDetails) ?? undefined}>Open in UPI app <ExternalLink size={14} /></a>
+                            <small>The QR is generated locally for this order’s exact accepted total. The UPI ID and account ownership are rider-provided and are not verified by Campus Rider.</small></>
+                          : <small>This uploaded QR may not prefill the order amount. Confirm the recipient and enter exactly ₹{Number(paymentDetails.total_amount).toFixed(2)} in your UPI app. Campus Rider does not verify the recipient.</small>}
+                      </div>
+                    ) : <p className="payment-state-note">The rider has not enabled UPI payment details. Contact them through the private chat to arrange payment.</p>}
+                    {paymentDetails.rider_id === session.user.id && paymentDetails.payment_status === 'payment_reported' && (
+                      <button className="payment-confirm-button" type="button" onClick={() => void confirmPaymentReceived()} disabled={paymentActionBusy}>
+                        {paymentActionBusy ? 'Saving…' : 'Confirm payment received'}
+                      </button>
+                    )}
+                    {paymentDetails.rider_id !== session.user.id && paymentDetails.payment_status === 'unpaid' && (
+                      <button className="payment-report-button" type="button" onClick={() => void reportPaymentMade()} disabled={paymentActionBusy}>
+                        {paymentActionBusy ? 'Saving…' : 'I have paid'}
+                      </button>
+                    )}
+                    <p className="payment-manual-warning">Reporting payment does not mark it paid. Only the assigned rider can confirm after checking their own UPI app; Campus Rider does not independently verify transfers.</p>
+                  </>
+                )}
+          </section>
+        </div>
       )}
     </section>
   )
