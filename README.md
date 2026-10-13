@@ -1,6 +1,6 @@
 # Campus Rider
 
-Campus Rider is a responsive NIT Srinagar student delivery web app. The initial release includes a welcome page, Supabase email/password authentication, email confirmation and password recovery, and a protected empty dashboard. Canteen and product listings intentionally contain no sample data.
+Campus Rider is a responsive NIT Srinagar student delivery web app. It includes Supabase email/password authentication, email confirmation and password recovery, and a protected dashboard. Its initial database setup seeds Gasha Canteen and Cafeteria as active canteens; products are not seeded.
 ## Run locally
 
 Requirements: Node.js 20.19+ or 22.12+ and an npm-compatible package manager.
@@ -15,10 +15,11 @@ VITE_SUPABASE_ANON_KEY=your-public-anon-or-publishable-key
 ```
 These `VITE_` values are visible in the browser. The anon/publishable key is designed for client use and is restricted by database RLS. Never put a `service_role` key, database password, SMTP password, or other secret in a `VITE_` variable.
 
-In the Supabase dashboard, open **SQL Editor → New query** and run both migration files in timestamp order:
+In the Supabase dashboard, open **SQL Editor → New query** and run all migration files in timestamp order:
 
 1. `supabase/migrations/20261012000000_initial_campus_rider.sql`
 2. `supabase/migrations/20261012010000_dual_role_delivery_workflows.sql`
+3. `supabase/migrations/20261013000000_seed_canteens.sql`
 
 Then start the app:
 ```sh
@@ -33,7 +34,7 @@ The frontend can be deployed on Vercel's free plan and use a Supabase project on
 1. Push this project to a GitHub repository and import it into [Vercel](https://vercel.com/new). Keep the Vite defaults (`npm run build` and `dist`) or set those values in Project Settings → Build and Deployment.
 2. In Vercel → Project Settings → Environment Variables, add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` using the values from Supabase → Project Settings → API. These are public client settings; never add a Supabase `service_role` key. Set them for Production and Preview as needed, and set `VITE_DEV_BYPASS_AUTH` to `false`.
 3. Deploy the project. In Supabase → Authentication → URL Configuration, set **Site URL** to the deployed Vercel origin (for example, `https://your-project.vercel.app`) and add that origin to **Redirect URLs**. Keep `http://localhost:5173` there for local development. Add any Vercel preview origins you plan to use.
-4. In Supabase → SQL Editor, run both migration files in the order listed above, then confirm email/password sign-in and email confirmation are enabled under Authentication → Providers → Email.
+4. In Supabase → SQL Editor, run all three migration files in the order listed above, then confirm email/password sign-in and email confirmation are enabled under Authentication → Providers → Email.
 5. Redeploy after changing Vercel environment variables. Test signup with an `@nitsri.ac.in` address, open the confirmation link, then log in. Test password recovery from the deployed origin as well.
 
 `vercel.json` routes browser paths back to the Vite app so auth links and client-side screens load on refresh. Supabase's built-in email sender has restrictive limits; configure a supported SMTP provider in Supabase for dependable verification and recovery emails.
@@ -45,12 +46,12 @@ The frontend can be deployed on Vercel's free plan and use a Supabase project on
 4. Set the minimum password length to 12 or greater. The client also requires uppercase, lowercase, number, and symbol; provider-side password policy remains authoritative.
 5. Configure custom SMTP for dependable verification and recovery mail in production. Supabase's built-in email sender has restrictive delivery/rate limits and is for evaluation, not production traffic.
 6. Copy the project URL and anon/publishable key from **Project Settings → API** into `.env.local`. Restart Vite after changing environment variables.
-7. Apply both files in `supabase/migrations/` in timestamp order in the Supabase SQL editor.
+7. Apply all three files in `supabase/migrations/` in timestamp order in the Supabase SQL editor. The final migration adds Gasha Canteen and Cafeteria as active canteens if they do not already exist.
 
 The frontend validates and lowercases/trims addresses for quick feedback. Independently, a `BEFORE INSERT OR UPDATE` trigger on `auth.users` lowercases and rejects any address outside `@nitsri.ac.in`, including direct Auth API requests. The database's `is_verified_nitsri_user()` helper and RLS policies additionally require `email_confirmed_at` before exposing profile/catalog/order data. Verification links are sent by Supabase Auth; an unverified signup does not get dashboard access. Passwords are stored and checked only by Supabase Auth, which uses its managed password hashing. Password reset links return to the app and open the change-password view.
 ## Data model
 
-The migrations create these empty tables:
+The migrations create these tables:
 - `canteens`: `id`, `name`, `description`, `location`, `operating_hours` (JSON), `is_active`, timestamps.
 - `products`: `id`, `canteen_id`, `name`, `description`, `category`, `price`, `image_url`, `is_available`, timestamps.
 - `profiles`: auth user ID, normalized college email, full name, timestamps; provisioned by a database trigger.
